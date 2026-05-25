@@ -29,10 +29,14 @@ jobs:
       - name: Pull DuckLake catalog
         run: uv run fdl pull default
 
-      - name: Configure and run checkpoint
+      - name: Expire old snapshots and delete orphaned parquet files
+        # ducklake_set_option(..., 'expire_older_than', ...) はオプション値を
+        # 記録するだけで実際の expire 処理は走らないため、明示的に
+        # ducklake_expire_snapshots / ducklake_delete_orphaned_files を
+        # 呼ぶ必要がある (DuckLake v1.0)。
         run: |
-          uv run fdl sql default "CALL ducklake_set_option(current_database(), 'expire_older_than', '7 days')"
-          uv run fdl sql default "CALL ducklake_set_option(current_database(), 'parquet_compression', 'zstd')"
+          uv run fdl sql default "CALL ducklake_expire_snapshots(current_database(), older_than => NOW() - INTERVAL '7 days')"
+          uv run fdl sql default "CALL ducklake_delete_orphaned_files(current_database(), older_than => NOW() - INTERVAL '7 days')"
           uv run fdl sql default "CHECKPOINT"
 
       - name: Push DuckLake catalog
