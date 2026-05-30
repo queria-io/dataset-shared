@@ -128,4 +128,3 @@ macro-paths: ["macros", "shared/macros"]
 - `scripts/snapshot-to-r2.py`: MotherDuck DuckLake → ローカル DuckDB → R2 へアップロード
 - `scripts/upload_artifacts.py`: dbt artifacts (manifest.json 等) + `[tool.queria]` から生成した meta.json を R2 にアップロード
 - `scripts/checkpoint.py`: DuckLake snapshot expire + orphan 削除メンテ
-- `scripts/ducklake_helper.py`: dbt 外で MotherDuck DuckLake に直接接続する duckdb context manager (ingest 用)
