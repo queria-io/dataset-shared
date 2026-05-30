@@ -11,10 +11,11 @@ jobs:
   checkpoint:
     runs-on: ubuntu-latest
     env:
-      FDL_S3_ENDPOINT: https://${{ secrets.CF_ACCOUNT_ID }}.r2.cloudflarestorage.com
-      FDL_S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
-      FDL_S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-      FDL_S3_BUCKET: ${{ inputs.s3_bucket }}
+      MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+      QUERIA_S3_ENDPOINT: https://${{ secrets.CF_ACCOUNT_ID }}.r2.cloudflarestorage.com
+      QUERIA_S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      QUERIA_S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+      QUERIA_S3_BUCKET: ${{ inputs.s3_bucket }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -24,20 +25,10 @@ jobs:
         with:
           enable-cache: true
       - run: uv python install 3.13
-      - run: uv lock --upgrade-package frozen-ducklake && uv sync
-
-      - name: Pull DuckLake catalog
-        run: uv run fdl pull default
+      - run: uv sync
 
       - name: Expire old snapshots and delete orphaned parquet files
-        # ducklake_set_option(..., 'expire_older_than', ...) はオプション値を
-        # 記録するだけで実際の expire 処理は走らないため、明示的に
-        # ducklake_expire_snapshots / ducklake_delete_orphaned_files を
-        # 呼ぶ必要がある (DuckLake v1.0)。
-        run: |
-          uv run fdl sql default "CALL ducklake_expire_snapshots(current_database(), older_than => NOW() - INTERVAL '7 days')"
-          uv run fdl sql default "CALL ducklake_delete_orphaned_files(current_database(), older_than => NOW() - INTERVAL '7 days')"
-          uv run fdl sql default "CHECKPOINT"
+        run: uv run python shared/scripts/checkpoint.py default
 
-      - name: Push DuckLake catalog
-        run: uv run fdl push default
+      - name: Snapshot MotherDuck catalog to R2
+        run: uv run python shared/scripts/snapshot-to-r2.py default
