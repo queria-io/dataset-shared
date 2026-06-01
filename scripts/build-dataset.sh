@@ -7,19 +7,20 @@
 #   # target: "local" (default) or "default" (production)
 #
 # Required environment variables:
-#   MOTHERDUCK_TOKEN
+#   NEON_DATABASE_URL
 #   QUERIA_S3_BUCKET (default target only)
 #   QUERIA_S3_ENDPOINT
 #   QUERIA_S3_ACCESS_KEY_ID
 #   QUERIA_S3_SECRET_ACCESS_KEY
+#   CF_ACCOUNT_ID
 set -euo pipefail
 target="${1:-local}"
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 
-# 1. dbt build + snapshot (in one Python process, see main.py)
-#    dbt build writes models into MotherDuck DuckLake (metadata) + R2 (Parquet).
-#    snapshot runs inline because `__ducklake_metadata_<db>` is only
-#    attachable in the same process as the most recent md:<db> activity.
+# 1. dbt build + snapshot.
+#    dbt build writes models into Neon DuckLake (metadata) + R2 (Parquet).
+#    snapshot-to-r2.py reads the per-dataset Postgres schema and writes a
+#    self-contained DuckDB file to R2 for queria-web to ATTACH.
 uv run python main.py "$target"
 
 # 2. Upload dbt artifacts (manifest.json, catalog.json, semantic_manifest.json)

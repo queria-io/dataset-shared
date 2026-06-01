@@ -1,14 +1,14 @@
-"""Snapshot a MotherDuck DuckLake catalog to a standalone DuckDB file in R2.
+"""Snapshot the Neon DuckLake catalog (per dataset) to a standalone DuckDB file in R2.
 
-Reads pyproject.toml [tool.queria] to identify the dataset, then:
-1. ATTACH the internal MotherDuck metadata DB (md:__ducklake_metadata_<db>) as a plain DuckDB.
-2. CTAS each ducklake_* metadata table into a fresh local DuckDB file.
-3. Upload the resulting DuckDB file to R2 at <bucket>/<dataset>/ducklake.duckdb.
+The Neon Postgres database holds DuckLake metadata for every dataset, isolated
+by Postgres schema (one schema per dataset). This script copies one dataset's
+ducklake_* metadata tables into a fresh local DuckDB file (in its `main`
+schema, matching what a sqlite/duckdb-backed DuckLake catalog looks like) and
+uploads that file to R2 at <bucket>/<dataset>/ducklake.duckdb.
 
-CTAS is used instead of COPY FROM DATABASE because COPY FROM DATABASE leaves
-MotherDuck's DuckLake DB in a temporary invalid state (md:<db> returns an
-internal error until the DB is recreated). CTAS only reads from the metadata
-DB without mutating it, so md:<db> remains queryable throughout.
+queria-web ATTACHs the uploaded file via `ducklake:https://...ducklake.duckdb`
+(DuckDB-backed DuckLake), so the file must have its ducklake_* tables in the
+`main` schema, not in the source `<dataset>` schema used inside Postgres.
 
 Usage:
     python scripts/snapshot-to-r2.py [target]
@@ -25,47 +25,48 @@ import boto3
 import duckdb
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from queria_config import TargetConfig, load_target, require_motherduck_token  # noqa: E402
+from queria_config import TargetConfig, load_target  # noqa: E402
 
 
-def snapshot(target: TargetConfig, token: str, snapshot_path: Path) -> None:
-    """Copy each ducklake_* metadata table from MotherDuck into a local DuckDB file.
+def snapshot(target: TargetConfig, snapshot_path: Path) -> None:
+    """Copy each ducklake_* metadata table from Neon to a local DuckDB file.
 
-    Why per-table CTAS instead of `COPY FROM DATABASE` (the DuckLake backup
-    pattern at https://ducklake.select/docs/stable/duckdb/guides/backups_and_recovery)
-    or `rclone` (https://ducklake.select/docs/stable/duckdb/guides/public_ducklake_on_object_storage)?
-
-    - `COPY FROM DATABASE` requires `ATTACH 'md:__ducklake_metadata_<db>'`
-      which is rejected by MotherDuck with "Catalog has been deleted" from
-      external sessions (the internal metadata DB is ephemeral and only
-      stays attached transiently after `md:<db>` is touched in the same
-      process). Reproduced on 2026-05-30.
-    - `rclone` only works when the source is a real DuckDB file. MotherDuck
-      manages the metadata DB server-side; there is no file to sync.
-    - CTAS reads each metadata table through the DuckLake view layer of
-      `md:<db>` which IS attachable, and writes to a fresh local DuckDB.
-      The resulting file is a valid DuckLake catalog (no extension marker
-      needed — DuckLake recognizes the table layout).
-
-    The output is functionally identical to `COPY FROM DATABASE` for the
-    snapshot use case (Parquet refs in `ducklake_data_file.path` are
-    preserved as-is, pointing at the BYOB R2 bucket).
+    Uses plain Postgres ATTACH on the source and CTAS into the DuckDB file.
+    The resulting file is a self-contained DuckLake catalog: ducklake_data_file.path
+    values are preserved verbatim and continue to point at the BYOB R2 objects.
     """
     conn = duckdb.connect(":memory:")
-    conn.execute("INSTALL motherduck; LOAD motherduck;")
-    conn.execute(f"SET motherduck_token = '{token}';")
-    conn.execute(f"ATTACH 'md:__ducklake_metadata_{target.motherduck_db}' AS src_md;")
-    conn.execute(f"ATTACH '{snapshot_path}' AS snap;")
+    conn.execute("INSTALL postgres; LOAD postgres;")
+    conn.execute(f"ATTACH '{target.neon_dsn}' AS src_pg (TYPE POSTGRES, READ_ONLY)")
+    conn.execute(f"ATTACH '{snapshot_path}' AS snap")
 
     tables = [
         r[0]
         for r in conn.execute(
             "SELECT table_name FROM information_schema.tables "
-            "WHERE table_catalog='src_md' AND table_schema='main'"
+            "WHERE table_catalog='src_pg' AND table_schema=? "
+            "AND table_name LIKE 'ducklake_%' ORDER BY 1",
+            [target.meta_schema],
         ).fetchall()
     ]
+    if not tables:
+        raise RuntimeError(
+            f"no ducklake_* tables found in Neon schema {target.meta_schema!r}"
+        )
+
     for t in tables:
-        conn.execute(f'CREATE TABLE snap.main."{t}" AS SELECT * FROM src_md.main."{t}"')
+        conn.execute(
+            f'CREATE TABLE snap.main."{t}" AS '
+            f'SELECT * FROM src_pg.{target.meta_schema}."{t}"'
+        )
+
+    # Snapshot consumers (queria-web via DuckDB WASM) read parquet over HTTPS
+    # without R2 credentials, so the embedded data_path must be the public URL.
+    public_data_path = f"{target.public_url.rstrip('/')}/{target.dataset}/ducklake.duckdb.files/"
+    conn.execute(
+        f"UPDATE snap.main.ducklake_metadata "
+        f"SET value = '{public_data_path}' WHERE key = 'data_path'"
+    )
     conn.close()
 
 
@@ -85,24 +86,21 @@ def upload(target: TargetConfig, snapshot_path: Path) -> None:
     )
     print(f"  uploaded snapshot → r2://{target.s3_bucket}/{target.snapshot_key}")
 
-def main() -> None:
-    """CLI entry point.
-
-    Note: MotherDuck's `__ducklake_metadata_<db>` is ephemeral and is only
-    attachable shortly after `md:<db>` has been touched in the same process.
-    Running this as a standalone CLI long after the last dbt build may fail
-    with "Catalog has been deleted". Prefer invoking `run()` from main.py
-    immediately after dbt build.
-    """
-    target_name = sys.argv[1] if len(sys.argv) > 1 else "local"
+def run(target_name: str) -> None:
     target = load_target(target_name)
-    token = require_motherduck_token()
-
     with tempfile.TemporaryDirectory() as tmp:
         snapshot_path = Path(tmp) / "ducklake.duckdb"
-        snapshot(target, token, snapshot_path)
-        print(f"  snapshot built: {snapshot_path} ({snapshot_path.stat().st_size:,} bytes)")
+        snapshot(target, snapshot_path)
+        print(
+            f"  snapshot built: {snapshot_path} "
+            f"({snapshot_path.stat().st_size:,} bytes)"
+        )
         upload(target, snapshot_path)
+
+
+def main() -> None:
+    target_name = sys.argv[1] if len(sys.argv) > 1 else "local"
+    run(target_name)
 
 
 if __name__ == "__main__":

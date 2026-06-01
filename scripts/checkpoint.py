@@ -1,5 +1,5 @@
 """Run DuckLake maintenance (expire snapshots, delete orphans, checkpoint)
-against a MotherDuck-hosted DuckLake catalog.
+against the Neon-hosted DuckLake catalog for one dataset.
 
 Usage:
     python scripts/checkpoint.py [target]
@@ -14,7 +14,7 @@ from pathlib import Path
 import duckdb
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from queria_config import load_target, require_motherduck_token  # noqa: E402
+from queria_config import load_target  # noqa: E402
 
 RETENTION = "INTERVAL '7 days'"
 
@@ -22,15 +22,18 @@ RETENTION = "INTERVAL '7 days'"
 def main() -> None:
     target_name = sys.argv[1] if len(sys.argv) > 1 else "default"
     target = load_target(target_name)
-    token = require_motherduck_token()
 
     conn = duckdb.connect(":memory:")
     conn.execute("INSTALL ducklake; LOAD ducklake;")
-    conn.execute("INSTALL motherduck; LOAD motherduck;")
-    conn.execute(f"SET motherduck_token = '{token}';")
+    conn.execute("INSTALL postgres; LOAD postgres;")
+    conn.execute("INSTALL httpfs; LOAD httpfs;")
     conn.execute(
-        f"ATTACH 'ducklake:md:__ducklake_metadata_{target.motherduck_db}' AS db "
-        f"(DATA_PATH '{target.data_path}');"
+        "CREATE SECRET r2 (TYPE r2, KEY_ID ?, SECRET ?, ACCOUNT_ID ?)",
+        [target.s3_access_key_id, target.s3_secret_access_key, target.cf_account_id],
+    )
+    conn.execute(
+        f"ATTACH '{target.ducklake_uri}' AS db "
+        f"(DATA_PATH '{target.data_path}', META_SCHEMA '{target.meta_schema}')"
     )
 
     # ducklake_set_option(..., 'expire_older_than', ...) only records the option,
@@ -44,7 +47,7 @@ def main() -> None:
     conn.execute("CHECKPOINT;")
     conn.close()
 
-    print(f"checkpoint completed for md:{target.motherduck_db}")
+    print(f"checkpoint completed for Neon schema {target.meta_schema!r}")
 
 
 if __name__ == "__main__":
