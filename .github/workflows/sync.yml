@@ -24,6 +24,7 @@ jobs:
       CF_D1_DATABASE_ID: ${{ secrets.CF_D1_DATABASE_ID }}
       ESTAT_API_KEY: ${{ secrets.ESTAT_API_KEY }}
       REINFOLIB_API_KEY: ${{ secrets.REINFOLIB_API_KEY }}
+      EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
     steps:
       - uses: actions/checkout@v5
         with:
