@@ -10,7 +10,7 @@ Queria データセットリポジトリの共通スクリプト。
 
 ```bash
 # submodule 追加（初回のみ）
-git submodule add https://github.com/flo8s/dataset-shared.git shared
+git submodule add https://github.com/queria-io/dataset-shared.git shared
 
 # ビルド
 scripts/build.sh local

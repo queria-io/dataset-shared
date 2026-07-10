@@ -48,13 +48,13 @@ jobs:
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          owner: flo8s
+          owner: queria-io
           repositories: dataset-catalog
 
       - name: Trigger catalog rebuild
         if: success()
         run: |
-          gh api repos/flo8s/dataset-catalog/dispatches \
+          gh api repos/queria-io/dataset-catalog/dispatches \
             -f event_type=dataset-updated \
             -f "client_payload[dataset]=${{ inputs.dataset_name }}"
         env:
