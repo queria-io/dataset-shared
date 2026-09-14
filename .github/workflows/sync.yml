@@ -29,6 +29,24 @@ on:
 jobs:
   sync:
     runs-on: ${{ inputs.runs-on }}
+    # Sync と Checkpoint はどちらもカタログに push する。並行して走ると、後から
+    # push した側が先の push の最中にカタログを変えてしまい、先の側が
+    # "The dataset changed while this push was running" で落ちる。呼び出し側の
+    # workflow レベル concurrency は Sync と Checkpoint をまたがないので、この
+    # 2 つの job を同じ group に入れて直列化する。
+    #
+    # ここで直列化できるのは reusable を経由する job だけ。カタログに push する
+    # 自前の job を持つリポジトリでは、その job にも同じ group を書く
+    #
+    # 走っている側は止めない。push の途中で切ると、公開されたカタログと
+    # データファイルの対応が途中の状態で残る
+    concurrency:
+      group: queria-catalog-write
+      cancel-in-progress: false
+      # 既定の queue: single は pending を 1 つしか持てず、後から来た run が
+      # 待っている run を蹴る。Checkpoint の cron は呼び出し側にあり週次か月次
+      # なので、Sync の列に埋もれて二度と走らなくなる。待てる数を増やす
+      queue: max
     env:
       PYTHONUNBUFFERED: "1"
       # queria は誰のデータセットに書くのかをトークンから決める。R2 の鍵は渡さない
