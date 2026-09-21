@@ -8,6 +8,14 @@ on:
         # 最後のリポが移り終わったら入力ごと外す
         required: false
         type: string
+    secrets:
+      # **`secrets: inherit` は所有者をまたがない。** 理由は sync.yml の同じ宣言を参照。
+      QUERIA_TOKEN:
+        description: 書き込み先のアカウントを決めるトークン
+        required: false
+      DISCORD_WEBHOOK_URL:
+        description: 失敗の通知先。空なら通知しない
+        required: false
 
 jobs:
   checkpoint:
