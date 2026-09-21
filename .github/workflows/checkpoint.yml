@@ -8,6 +8,14 @@ on:
         # 最後のリポが移り終わったら入力ごと外す
         required: false
         type: string
+    secrets:
+      # **`secrets: inherit` は所有者をまたがない。** 理由は sync.yml の同じ宣言を参照。
+      #
+      # この workflow に通知の段は無いので DISCORD_WEBHOOK_URL は宣言しない。
+      # 読む箇所が無い名前を宣言すると「渡せば効く」と読める
+      QUERIA_TOKEN:
+        description: 書き込み先のアカウントを決めるトークン
+        required: false
 
 jobs:
   checkpoint:

@@ -25,6 +25,19 @@ on:
         description: 用意する Node.js のバージョン
         required: false
         type: string
+    secrets:
+      # **`secrets: inherit` は所有者をまたがない。** GitHub の仕様で、inherit が効くのは
+      # 呼び出し側と同じ organization / enterprise の reusable workflow を呼ぶときだけ。
+      # 個人アカウントのリポジトリからこの workflow を呼ぶと、inherit を書いても
+      # secrets は空で渡り、queria が「トークンが無い」として落ちる。
+      # 明示的に渡せるように宣言する。org のリポジトリは inherit のままでよい
+      # (inherit は宣言の有無にかかわらず全部渡す)。
+      QUERIA_TOKEN:
+        description: 書き込み先のアカウントを決めるトークン
+        required: false
+      DISCORD_WEBHOOK_URL:
+        description: 失敗の通知先。空なら通知しない
+        required: false
 
 jobs:
   sync:
@@ -93,7 +106,12 @@ jobs:
     if: failure()
     steps:
       - name: Notify Discord on failure
+        # **通知先が無いときは黙って終わる。** 空の URL を curl に渡すと exit 3 で
+        # この job まで失敗し、Actions の一覧で本当の失敗理由が隠れる
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
+          [ -n "$WEBHOOK" ] || exit 0
           curl -s -H "Content-Type: application/json" \
             -d "{\"embeds\": [{\"title\": \"Sync Failed\", \"url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\", \"color\": 15158332, \"fields\": [{\"name\": \"Repository\", \"value\": \"${{ github.repository }}\"}, {\"name\": \"Branch\", \"value\": \"${{ github.ref_name }}\"}, {\"name\": \"Commit\", \"value\": \"${{ github.sha }}\"}]}]}" \
-            "${{ secrets.DISCORD_WEBHOOK_URL }}"
+            "$WEBHOOK"
