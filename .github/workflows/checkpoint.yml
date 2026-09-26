@@ -20,6 +20,11 @@ on:
 jobs:
   checkpoint:
     runs-on: ubuntu-latest
+    # 置かないとランナー既定の 360 分まで走り、そのあいだ同じ concurrency group の
+    # Sync も止まる。直近の成功ランの実測では大半が 5 分以内で、最も長い
+    # dataset-nlftp が 74 分。この workflow には通知の段が無く、打ち切っても
+    # Actions の一覧を見るまで分からないので、上限は広めに取る
+    timeout-minutes: 180
     # Sync と Checkpoint はどちらもカタログに push する。並行して走ると、後から
     # push した側が先の push の最中にカタログを変えてしまい、先の側が
     # "The dataset changed while this push was running" で落ちる。呼び出し側の
