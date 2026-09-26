@@ -36,6 +36,41 @@ macro-paths: ["macros", "shared/macros"]
 
 - `scripts/build-dataset.sh`: `queria sync`（pull → ビルド → push）を回す
 
+## 共通ワークフロー
+
+`.github/workflows/sync.yml` と `.github/workflows/checkpoint.yml` を各データセットリポが
+`uses: queria-io/dataset-shared/.github/workflows/<name>@main` で呼ぶ。`@main` なので
+ここへのマージは全リポの次のランに効く。
+
+Sync を打ち切るまでの分数は `timeout_minutes` で決まる。既定は 90 分で、数えるのは
+job が走り出してからの時間（`concurrency` の待ち時間は入らない）。これを超える
+データセットは自分の実測値を呼び出し側から渡す。
+
+```yaml
+jobs:
+  sync:
+    uses: queria-io/dataset-shared/.github/workflows/sync.yml@main
+    with:
+      timeout_minutes: 240
+```
+
+| データセット | 渡す値 | 成功ランの実測（最大） |
+| --- | --- | --- |
+| reinfolib | 180 | 131 分 |
+| edinet | 240 | 147 分 |
+| nlftp | 240 | 149 分 |
+| e-stat | 300 | 210 分 |
+| meti | 360 | 280 分 |
+
+残りは既定の 90 分で足りる。実測の最大は metro_tokyo の 38 分と jma の 33 分で、
+他の 14 リポは 5 分以内。
+
+`meti` の 360 分は GitHub ホステッドランナーの上限で、それ以上は渡せない。2026-08 に
+1 分から 280 分へ増えて以降 275〜280 分で並んでおり、上限まで 80 分しかない。次に
+取り込み範囲を広げる前にビルドを分ける。
+
+Checkpoint の上限は 180 分の固定値。実測の最大は nlftp の 74 分。
+
 ## 層の切り方
 
 出荷物の本体は Silver に置く。型が揃い名寄せ済みで、用途に依存しない粒度のもの。

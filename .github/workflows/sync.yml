@@ -25,6 +25,17 @@ on:
         description: 用意する Node.js のバージョン
         required: false
         type: string
+      timeout_minutes:
+        # 既定は軽いデータセットに合わせてある。直近の成功ランの実測で 21 リポのうち
+        # 14 が 5 分以内、最も重い jma / metro_tokyo が 33 分・38 分。これを超える
+        # データセットは自分の実測値を渡す (値の一覧は README)
+        #
+        # 数えるのは job が走り出してからの時間で、concurrency の待ち時間は入らない
+        # (dataset-e-stat の run 34814706853 は 161 分待ってから 210 分走って成功した)
+        description: sync job を打ち切るまでの分数
+        required: false
+        type: number
+        default: 90
     secrets:
       # **`secrets: inherit` は所有者をまたがない。** GitHub の仕様で、inherit が効くのは
       # 呼び出し側と同じ organization / enterprise の reusable workflow を呼ぶときだけ。
@@ -42,6 +53,10 @@ on:
 jobs:
   sync:
     runs-on: ${{ inputs.runs-on }}
+    # 置かないとランナー既定の 360 分まで走る。取得元が応答を返さなくなったときに
+    # 6 時間ぶん走り切ってから打ち切られ、そのあいだ同じ concurrency group の
+    # Checkpoint も止まる
+    timeout-minutes: ${{ inputs.timeout_minutes }}
     # Sync と Checkpoint はどちらもカタログに push する。並行して走ると、後から
     # push した側が先の push の最中にカタログを変えてしまい、先の側が
     # "The dataset changed while this push was running" で落ちる。呼び出し側の
@@ -103,15 +118,31 @@ jobs:
   notify-failure:
     runs-on: ubuntu-latest
     needs: sync
-    if: failure()
+    # **`failure()` は timeout-minutes の打ち切りを拾わない。** 打ち切られた job の
+    # 結果は cancelled で、そのとき `failure()` も `cancelled()` も false を返すので、
+    # `failure()` でも `failure() || cancelled()` でもこの job は skip される。
+    # 結果を直接見る (実測: dataset-shared の run 36202940197 / 36203435566)
+    #
+    # `!cancelled()` が人の手によるキャンセルと打ち切りを分ける。人が run を止めた
+    # ときはこの job も一緒にキャンセルされて通知は飛ばない。job が timeout で
+    # 打ち切られたときは run にキャンセルが来ていないので、この job は走る
+    if: ${{ !cancelled() && needs.sync.result != 'success' && needs.sync.result != 'skipped' }}
     steps:
-      - name: Notify Discord on failure
+      - name: Notify Discord
         # **通知先が無いときは黙って終わる。** 空の URL を curl に渡すと exit 3 で
         # この job まで失敗し、Actions の一覧で本当の失敗理由が隠れる
         env:
           WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          RESULT: ${{ needs.sync.result }}
         run: |
           [ -n "$WEBHOOK" ] || exit 0
+          # 打ち切りと失敗はどちらもここに来る。どちらだったかは題と Result に出す。
+          # 打ち切りは取得元が応答を返さなくなったことを、失敗はビルドが落ちたことを指す
+          if [ "$RESULT" = cancelled ]; then
+            TITLE="Sync Timed Out"
+          else
+            TITLE="Sync Failed"
+          fi
           curl -s -H "Content-Type: application/json" \
-            -d "{\"embeds\": [{\"title\": \"Sync Failed\", \"url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\", \"color\": 15158332, \"fields\": [{\"name\": \"Repository\", \"value\": \"${{ github.repository }}\"}, {\"name\": \"Branch\", \"value\": \"${{ github.ref_name }}\"}, {\"name\": \"Commit\", \"value\": \"${{ github.sha }}\"}]}]}" \
+            -d "{\"embeds\": [{\"title\": \"$TITLE\", \"url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\", \"color\": 15158332, \"fields\": [{\"name\": \"Repository\", \"value\": \"${{ github.repository }}\"}, {\"name\": \"Branch\", \"value\": \"${{ github.ref_name }}\"}, {\"name\": \"Commit\", \"value\": \"${{ github.sha }}\"}, {\"name\": \"Result\", \"value\": \"$RESULT\"}]}]}" \
             "$WEBHOOK"
