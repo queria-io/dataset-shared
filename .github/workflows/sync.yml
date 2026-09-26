@@ -103,15 +103,31 @@ jobs:
   notify-failure:
     runs-on: ubuntu-latest
     needs: sync
-    if: failure()
+    # **`failure()` は timeout-minutes の打ち切りを拾わない。** 打ち切られた job の
+    # 結果は cancelled で、そのとき `failure()` も `cancelled()` も false を返すので、
+    # `failure()` でも `failure() || cancelled()` でもこの job は skip される。
+    # 結果を直接見る (実測: dataset-shared の run 36202940197 / 36203435566)
+    #
+    # `!cancelled()` が人の手によるキャンセルと打ち切りを分ける。人が run を止めた
+    # ときはこの job も一緒にキャンセルされて通知は飛ばない。job が timeout で
+    # 打ち切られたときは run にキャンセルが来ていないので、この job は走る
+    if: ${{ !cancelled() && needs.sync.result != 'success' && needs.sync.result != 'skipped' }}
     steps:
-      - name: Notify Discord on failure
+      - name: Notify Discord
         # **通知先が無いときは黙って終わる。** 空の URL を curl に渡すと exit 3 で
         # この job まで失敗し、Actions の一覧で本当の失敗理由が隠れる
         env:
           WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          RESULT: ${{ needs.sync.result }}
         run: |
           [ -n "$WEBHOOK" ] || exit 0
+          # 打ち切りと失敗はどちらもここに来る。どちらだったかは題と Result に出す。
+          # 打ち切りは取得元が応答を返さなくなったことを、失敗はビルドが落ちたことを指す
+          if [ "$RESULT" = cancelled ]; then
+            TITLE="Sync Timed Out"
+          else
+            TITLE="Sync Failed"
+          fi
           curl -s -H "Content-Type: application/json" \
-            -d "{\"embeds\": [{\"title\": \"Sync Failed\", \"url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\", \"color\": 15158332, \"fields\": [{\"name\": \"Repository\", \"value\": \"${{ github.repository }}\"}, {\"name\": \"Branch\", \"value\": \"${{ github.ref_name }}\"}, {\"name\": \"Commit\", \"value\": \"${{ github.sha }}\"}]}]}" \
+            -d "{\"embeds\": [{\"title\": \"$TITLE\", \"url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\", \"color\": 15158332, \"fields\": [{\"name\": \"Repository\", \"value\": \"${{ github.repository }}\"}, {\"name\": \"Branch\", \"value\": \"${{ github.ref_name }}\"}, {\"name\": \"Commit\", \"value\": \"${{ github.sha }}\"}, {\"name\": \"Result\", \"value\": \"$RESULT\"}]}]}" \
             "$WEBHOOK"
