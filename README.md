@@ -35,6 +35,8 @@ macro-paths: ["macros", "shared/macros"]
 ## 提供スクリプト
 
 - `scripts/build-dataset.sh`: `queria sync`（pull → ビルド → push）を回す
+- `scripts/fetch-gif-vocab.py`: GIF のコアデータモデルを `vocab/gif_core.csv` にする
+- `scripts/check-vocab.py`: `vocab/columns.csv` を検査する
 
 ## 共通ワークフロー
 
@@ -93,6 +95,11 @@ Gold にあたる層をデータセット側に持つと、用途の数だけテ
 層を数えるとき、前者は保管と再処理の単位を、後者はコードの保守単位を数えている。
 上の `raw` / `stg` / `mart` はディレクトリの区切りであって、materialization は
 データセットごとに違ってよい。
+
+## 列名の語彙
+
+列名と列の日本語名は、国の語彙（GIF・IMI）に揃える。対応表と決め方は
+[`vocab/`](vocab/README.md) にある。
 
 ## 記述の規約
 

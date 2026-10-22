@@ -1,0 +1,16 @@
+name: vocab
+
+on:
+  pull_request:
+    paths: ["vocab/**", "scripts/check-vocab.py"]
+  push:
+    branches: [main]
+    paths: ["vocab/**", "scripts/check-vocab.py"]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - run: python3 scripts/check-vocab.py
