@@ -1,5 +1,5 @@
 column,title,gif_class,gif_term,imi_term,entity,type,format,aliases,note
-local_government_code,全国地方公共団体コード,住所,localGovernmentCode,市区町村コード,city,VARCHAR,6 桁（検査数字つき、先頭ゼロ保持）,lg_code;municipality_code;area,都道府県は 2 桁目までで、末尾 4 桁が 0000 の行
+local_government_code,全国地方公共団体コード,住所,localGovernmentCode,市区町村コード,city,VARCHAR,6 桁（検査数字つき、先頭ゼロ保持）,lg_code;municipality_code;area,都道府県の行は 3〜5 桁目が 000 で、6 桁目は検査数字（東京都は 130001）
 city_code,市区町村コード（5 桁）,,,,,VARCHAR,5 桁（検査数字なし）,,GIF に語が無い。e-Stat・reinfolib など検査数字なしの原典と結ぶための派生列。local_government_code と併記する
 prefecture_code,都道府県コード,,,都道府県コード,prefecture,VARCHAR,2 桁（先頭ゼロ保持）,pref_code,GIF の住所に都道府県コードの語は無い（施設の serviceAreaPrefectureCode のみ）。IMI に合わせる
 prefecture,都道府県,住所,prefecture,都道府県,,VARCHAR,,prefecture_name;pref_name,

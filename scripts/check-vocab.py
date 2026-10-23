@@ -21,7 +21,8 @@ def read(name: str) -> list[dict]:
 
 
 def snake(term: str) -> str:
-    return re.sub(r"(?<!^)(?=[A-Z])", "_", term).lower()
+    # dataset-gif の vocab.term.snake_case_name と同じ規則（height_CMT → height_cmt）
+    return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", term).lower()
 
 
 def problems(columns: list[dict], gif: list[dict]) -> list[str]:

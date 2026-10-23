@@ -2,10 +2,10 @@ name: vocab
 
 on:
   pull_request:
-    paths: ["vocab/**", "scripts/check-vocab.py"]
+    paths: ["vocab/**", "scripts/check-vocab.py", ".github/workflows/vocab.yml"]
   push:
     branches: [main]
-    paths: ["vocab/**", "scripts/check-vocab.py"]
+    paths: ["vocab/**", "scripts/check-vocab.py", ".github/workflows/vocab.yml"]
 
 jobs:
   check:
