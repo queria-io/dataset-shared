@@ -36,6 +36,39 @@ macro-paths: ["macros", "shared/macros"]
 
 - `scripts/build-dataset.sh`: `queria sync`（pull → ビルド → push）を回す
 
+## 取得の共通部品
+
+`fetch.py` は、データセットの取得処理（`main.py` や `pipelines/*.py`）で使う部品。標準ライブラリだけで書いてある。各データセットリポからは submodule の置き場所経由で読む。
+
+```python
+from shared.fetch import RangeFile, fetch, replacing, write_atomic
+
+body = fetch(url, user_agent=USER_AGENT, not_found_ok=True)  # 404 は None
+write_atomic(Path("data/csv/01.csv"), body)
+
+with replacing(Path("data/places/place.ndjson")) as partial:
+    rows = write_rows(partial)
+    if rows == 0:
+        raise RuntimeError("no rows")  # 前回の place.ndjson は残る
+```
+
+- `fetch` / `content_length`: 5xx・429・接続断・タイムアウト・本文の途中切れ・TLS の失敗を、5 / 10 / 20 / 40 秒の間隔で4回まで再試行する。それ以外の 4xx はすぐ上げる。`timeout` / `retries` / `backoff` で変えられる
+- `RangeFile`: HTTP の Range で読むシーク可能なファイル。`zipfile.ZipFile(io.BufferedReader(RangeFile(url), 1 << 16))` のように渡すと、大きな zip の目次と必要なメンバーだけを読む。Range が効かずに 200 で全体が返ってきたら `RuntimeError` で止める
+- `replacing` / `write_atomic`: 一時ファイル（`<名前>.part`）に書いてから置き換える。途中で失敗したときと、`with` の中で例外を投げたとき（0件だった、など）は前回の出力を残す。取得済みのファイルを `exists()` で飛ばすデータセットでは、書きかけのファイルが取得済みとして残らない
+
+データセットに新しく取得処理を書くときは、`urlopen` を直接呼ばずにこれを使う。テストは `uv run --no-project --python 3.13 python -m unittest discover -s tests` で流す。
+
+### submodule の版を上げる
+
+各データセットリポは `shared` の版を固定しているので、ここを直しても版を上げるまでは効かない（ワークフローは `@main` で呼ぶので、版と関係なく効く）。
+
+```bash
+git -C shared fetch origin
+git -C shared checkout origin/main
+git add shared
+git commit -m "chore: dataset-shared を更新する"
+```
+
 ## 共通ワークフロー
 
 `.github/workflows/sync.yml` と `.github/workflows/checkpoint.yml` を各データセットリポが
