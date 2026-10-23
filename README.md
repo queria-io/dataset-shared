@@ -43,7 +43,6 @@ sed 's/DATASET_NAME/<name>/g' shared/templates/profiles.yml > profiles.yml
 ## 提供スクリプト
 
 - `scripts/build-dataset.sh`: `queria sync`（pull → ビルド → push）を回す
-- `scripts/check-vocab.py`: `vocab/concepts.csv` を gif・schemaorg データセットと突き合わせて検査する
 
 ## 取得の共通部品
 
@@ -138,8 +137,9 @@ Gold にあたる層をデータセット側に持つと、用途の数だけテ
 
 ## 列名の語彙
 
-列名は一般のデータなら schema.org、日本の公的データなら GIF に揃え、名前が違っても同じ概念の
-列は概念の表で結ぶ。表と決め方は [`vocab/`](vocab/README.md) にある。
+列名は一般のデータなら schema.org、日本の公的データなら GIF に揃える。列名は
+データ項目の語彙に、`semantic: { role: entity, name: ... }` の名前は実体の語彙に揃える。
+語彙と決め方は [queria-io/vocabulary](https://github.com/queria-io/vocabulary) にある。
 
 ## 記述の規約
 
