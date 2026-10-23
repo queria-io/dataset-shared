@@ -49,7 +49,7 @@ sed 's/DATASET_NAME/<name>/g' shared/templates/profiles.yml > profiles.yml
 `fetch.py` は、データセットの取得処理（`main.py` や `pipelines/*.py`）で使う部品。標準ライブラリだけで書いてある。各データセットリポからは submodule の置き場所経由で読む。
 
 ```python
-from shared.fetch import RangeFile, fetch, replacing, write_atomic
+from shared.fetch import RangeFile, RangeNotSupported, download, fetch, replacing, write_atomic
 
 body = fetch(url, user_agent=USER_AGENT, not_found_ok=True)  # 404 は None
 write_atomic(Path("data/csv/01.csv"), body)
@@ -61,7 +61,8 @@ with replacing(Path("data/places/place.ndjson")) as partial:
 ```
 
 - `fetch` / `content_length`: 5xx・429・接続断・タイムアウト・本文の途中切れ・TLS の失敗を、5 / 10 / 20 / 40 秒の間隔で4回まで再試行する。それ以外の 4xx はすぐ上げる。`timeout` / `retries` / `backoff` で変えられる
-- `RangeFile`: HTTP の Range で読むシーク可能なファイル。`zipfile.ZipFile(io.BufferedReader(RangeFile(url), 1 << 16))` のように渡すと、大きな zip の目次と必要なメンバーだけを読む。Range が効かずに 200 で全体が返ってきたら `RuntimeError` で止める
+- `RangeFile`: HTTP の Range で読むシーク可能なファイル。`zipfile.ZipFile(io.BufferedReader(RangeFile(url), 1 << 16))` のように渡すと、大きな zip の目次と必要なメンバーだけを読む。Range が効かずに 200 で全体が返ってきたら `RangeNotSupported` で止める。同じ配信元でも、要求を送る場所（手元と GitHub のランナー）で Range を無視することがあるので、受けた側は `download` に切り替える
+- `download`: 本文を少しずつファイルに書く。途中で切れたら最初から取り直し、書き終わるまでは置き換えない
 - `replacing` / `write_atomic`: 一時ファイル（`<名前>.part`）に書いてから置き換える。途中で失敗したときと、`with` の中で例外を投げたとき（0件だった、など）は前回の出力を残す。取得済みのファイルを `exists()` で飛ばすデータセットでは、書きかけのファイルが取得済みとして残らない
 
 データセットに新しく取得処理を書くときは、`urlopen` を直接呼ばずにこれを使う。テストは `uv run --no-project --python 3.13 python -m unittest discover -s tests` で流す。
