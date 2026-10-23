@@ -35,8 +35,7 @@ macro-paths: ["macros", "shared/macros"]
 ## 提供スクリプト
 
 - `scripts/build-dataset.sh`: `queria sync`（pull → ビルド → push）を回す
-- `scripts/fetch-gif-vocab.py`: GIF のコアデータモデルを `vocab/gif_core.csv` にする
-- `scripts/check-vocab.py`: `vocab/concepts.csv` を検査する
+- `scripts/check-vocab.py`: `vocab/concepts.csv` を gif・schemaorg データセットと突き合わせて検査する
 
 ## 取得の共通部品
 
