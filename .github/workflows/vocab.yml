@@ -13,4 +13,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
-      - run: python3 scripts/check-vocab.py
+      - uses: astral-sh/setup-uv@v7
+      # 語彙は公開データセット（gif・schemaorg）から引く。トークンはレートリミットを上げるためだけ
+      - run: uv run scripts/check-vocab.py
+        env:
+          QUERIA_TOKEN: ${{ secrets.QUERIA_TOKEN }}
