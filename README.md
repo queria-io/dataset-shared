@@ -32,6 +32,14 @@ macro-paths: ["macros", "shared/macros"]
 - `macros/catalog.sql`: dbt-duckdb の `duckdb__get_catalog` オーバーライド。全アタッチ DB を対象にする修正
 - `macros/generate_schema_name.sql`: サブディレクトリ名をスキーマ名として使用
 
+## 雛形
+
+- `templates/profiles.yml`: 新しいデータセットの dbt プロファイル。DuckLake カタログの ATTACH（`DATA_INLINING_ROW_LIMIT 0` つき）、`credential_chain` の S3 シークレット、`QUERIA_USER_AGENT` の受け渡しまで入っている。既存のリポジトリを写すと古い形が混ざるので、ここから作る
+
+```bash
+sed 's/DATASET_NAME/<name>/g' shared/templates/profiles.yml > profiles.yml
+```
+
 ## 提供スクリプト
 
 - `scripts/build-dataset.sh`: `queria sync`（pull → ビルド → push）を回す
