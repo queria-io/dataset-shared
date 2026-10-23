@@ -73,10 +73,12 @@ jobs:
       # 手動の CHECKPOINT は使わない。inlined data を parquet に flush して
       # メモリを食い尽くし、肥大カタログで OOM クラッシュする (dataset-e-stat で発生)。
       #
+      # 公式データセットは直近 7 版を残す（CLI の既定は最新 1 版だけ）。
+      #
       # 公開しないと expire の結果が読み手に見えないので push まで行う。push は
       # 既定で expire も行うため、明示的に expire したあとは --keep-history で二度回さない
       - name: Expire snapshots and publish
         run: |
           uv run queria pull
-          uv run queria expire --retention-days 7
+          uv run queria expire --keep-versions 7
           uv run queria push --keep-history

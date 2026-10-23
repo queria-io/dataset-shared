@@ -31,4 +31,6 @@ if [ "$#" -eq 0 ]; then
     set -- python main.py
 fi
 
-exec uv run queria sync -- "$@"
+# Queria's own datasets keep their last seven versions, so the history tab has
+# something to show. The CLI keeps only the latest by default.
+exec uv run queria sync --keep-versions 7 -- "$@"
