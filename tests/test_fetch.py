@@ -167,10 +167,28 @@ class FetchTest(unittest.TestCase):
     def test_range_file_stops_when_range_is_ignored(self):
         url = self.route("/no-range.zip", _ranged(b"z" * 5000, honor_range=False))
         file = fetch.RangeFile(url, **FAST)
-        with self.assertRaisesRegex(RuntimeError, "Range"):
+        with self.assertRaises(fetch.RangeNotSupported):
             file.read(10)
         # 一時的な失敗ではないので再試行しない（HEAD 1回 + GET 1回）
         self.assertEqual(self.server.hits["/no-range.zip"], 2)
+
+    def test_download(self):
+        body = b"y" * 300_000
+        url = self.route("/big.zip", _ranged(body, honor_range=False))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "big.zip"
+            self.assertEqual(fetch.download(url, path, chunk_size=1 << 12, **FAST), len(body))
+            self.assertEqual(path.read_bytes(), body)
+            self.assertEqual(list(Path(directory).iterdir()), [path])
+
+    def test_download_retries_truncated_body(self):
+        body = b"w" * 50_000
+        url = self.route("/cut.zip", _truncated_then(body))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "cut.zip"
+            fetch.download(url, path, **FAST)
+            self.assertEqual(path.read_bytes(), body)
+        self.assertEqual(self.server.hits["/cut.zip"], 2)
 
 
 class ReplacingTest(unittest.TestCase):

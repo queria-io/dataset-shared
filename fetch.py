@@ -8,7 +8,9 @@
   TLS の失敗）は、間隔を延ばしながら再試行する
 - content_length: HEAD で大きさを取る。fetch と同じく再試行する
 - RangeFile: HTTP の Range で読むシーク可能なファイル。zipfile などに渡して、
-  大きな配布物の一部だけを読む。Range が効かずに全体が返ってきたら止める
+  大きな配布物の一部だけを読む。Range が効かずに全体が返ってきたら RangeNotSupported で止める
+- download: 本文を少しずつファイルに書く。Range が効かない配信元から大きな配布物を
+  取るときの代わりの手段
 - write_atomic / replacing: 一時ファイルに書いてから置き換える。途中で失敗したときや、
   呼び出し側が例外を投げたとき（0件だった、など）は前回の出力を残す
 """
@@ -98,6 +100,14 @@ def content_length(url: str, *, user_agent: str | None = None, **options) -> int
     return request(req, lambda r: int(r.headers["Content-Length"]), **options)
 
 
+class RangeNotSupported(RuntimeError):
+    """Range 要求に、配信元が 206 ではなく全体（200）で応えた。
+
+    同じ配信元でも、要求を送る場所によって Range を無視することがある
+    （CDN の配信拠点ごとの違い）。受けた側は download で全体を取る手に切り替える。
+    """
+
+
 class RangeFile(io.RawIOBase):
     """HTTP の Range で読む、シーク可能な読み取り専用ファイル。
 
@@ -152,8 +162,37 @@ class RangeFile(io.RawIOBase):
     def _read_partial(self, response) -> bytes:
         # Range を無視して 200 で全体が返ってきたら、配布物を丸ごと読むことになる
         if response.status != 206:
-            raise RuntimeError(f"{self.url}: Range が効かない (HTTP {response.status})")
+            raise RangeNotSupported(f"{self.url}: Range が効かない (HTTP {response.status})")
         return response.read()
+
+
+def download(
+    url: str,
+    path: Path,
+    *,
+    user_agent: str | None = None,
+    chunk_size: int = 1 << 20,
+    **options,
+) -> int:
+    """url の本文を path に少しずつ書き、書いたバイト数を返す。
+
+    途中で切れたら最初から取り直す（request の再試行）。書き終わるまでは
+    path を置き換えない。
+    """
+    headers = {"User-Agent": user_agent} if user_agent else {}
+
+    def save(response) -> int:
+        written = 0
+        with replacing(path) as partial, partial.open("wb") as handle:
+            while block := response.read(chunk_size):
+                handle.write(block)
+                written += len(block)
+            expected = response.headers.get("Content-Length")
+            if expected is not None and written != int(expected):
+                raise http.client.IncompleteRead(b"", int(expected) - written)
+        return written
+
+    return request(Request(url, headers=headers), save, **options)
 
 
 @contextlib.contextmanager
