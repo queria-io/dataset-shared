@@ -36,7 +36,7 @@ macro-paths: ["macros", "shared/macros"]
 
 - `scripts/build-dataset.sh`: `queria sync`（pull → ビルド → push）を回す
 - `scripts/fetch-gif-vocab.py`: GIF のコアデータモデルを `vocab/gif_core.csv` にする
-- `scripts/check-vocab.py`: `vocab/columns.csv` を検査する
+- `scripts/check-vocab.py`: `vocab/concepts.csv` を検査する
 
 ## 共通ワークフロー
 
@@ -98,8 +98,8 @@ Gold にあたる層をデータセット側に持つと、用途の数だけテ
 
 ## 列名の語彙
 
-列名と列の日本語名は、国の語彙（GIF・IMI）に揃える。対応表と決め方は
-[`vocab/`](vocab/README.md) にある。
+列名は一般のデータなら schema.org、日本の公的データなら GIF に揃え、名前が違っても同じ概念の
+列は概念の表で結ぶ。表と決め方は [`vocab/`](vocab/README.md) にある。
 
 ## 記述の規約
 
