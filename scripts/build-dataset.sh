@@ -31,6 +31,26 @@ if [ "$#" -eq 0 ]; then
     set -- python main.py
 fi
 
+# Keep dbt's credentials alive however long its run takes. DuckDB fetches them
+# once, when the profile's S3 secret is created, and they expire after fifteen
+# minutes; queria.dbt_plugin re-issues them as dbt runs each model or test. Add
+# it to a copy of the profile rather than to the repository's, and only when
+# the installed queria has it -- a profile naming a module that is not there
+# stops dbt at startup. A DBT_PROFILES_DIR set by hand is left alone.
+if [ -f profiles.yml ] && [ -n "${DBT_PROFILES_DIR:-}" ]; then
+    echo "DBT_PROFILES_DIR is set: dbt runs without queria.dbt_plugin, and one longer than fifteen minutes loses its credentials" >&2
+elif [ -f profiles.yml ]; then
+    profiles_dir="$(mktemp -d)"
+    status=0
+    uv run python "$(dirname "$0")/with_dbt_plugin.py" profiles.yml "$profiles_dir/profiles.yml" || status=$?
+    # 3 is with_dbt_plugin.NO_PLUGIN
+    case "$status" in
+        0) export DBT_PROFILES_DIR="$profiles_dir" ;;
+        3) rm -rf "$profiles_dir" ;; # the installed queria has no plugin yet: build with the profile as it is
+        *) rm -rf "$profiles_dir"; echo "could not add queria.dbt_plugin to profiles.yml (exit $status)" >&2; exit 1 ;;
+    esac
+fi
+
 # Queria's own datasets keep their last seven versions, so the history tab has
 # something to show. The CLI keeps only the latest by default. Keep this in step
 # with .github/workflows/checkpoint.yml.

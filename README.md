@@ -21,6 +21,10 @@ scripts/build.sh
 （fdl の `local` ターゲットに相当するものは無い。書き込みは Queria が発行する
 一時認証情報を必ず経由する）。
 
+## dbt の認証情報
+
+`scripts/build-dataset.sh` は dbt を回す前に、データセットの `profiles.yml` を一時ディレクトリへ写して `queria.dbt_plugin` を足し、`DBT_PROFILES_DIR` をそこへ向ける。DuckDB はプロファイルの S3 secret を作るときにしか認証情報を取らないので、15 分を超える dbt の実行はこのプラグインが取り直す。リポジトリの `profiles.yml` は書き換えない。入っている queria にこのモジュールが無いとき、または `DBT_PROFILES_DIR` を自分で指定しているときは何もしない（`scripts/with_dbt_plugin.py`）。
+
 ## 提供マクロ
 
 `macros/` に共通の dbt マクロを配置。各データセットの `dbt_project.yml` で参照する:
