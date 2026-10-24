@@ -14,9 +14,11 @@ DATASET_NAME:
         - aws
         # 地理空間の型を使わないデータセットでは外す。excel など、読み込みに要る拡張はここに足す
         - spatial
-      # 認証情報を値として持たず、期限が切れたら取り直させる。一時認証情報は
-      # 15 分で切れるのに対しビルドはそれより長く走るので、値を渡す形にすると
-      # 途中で書けなくなる。process が実行するのは queria で、鍵はどこにも置かない
+      # 認証情報を値として持たず、取り方 (process が実行する queria) だけを渡す。
+      # 鍵はどこにも置かない。ただし DuckDB はこの secret を作るときにしか
+      # process を呼ばず、refresh: auto でも期限 (15 分) が来ても取り直さない。
+      # 15 分を超える dbt の実行は、scripts/build-dataset.sh がビルドの前に足す
+      # queria.dbt_plugin が、モデルやテストを流すたびに取り直す
       secrets:
         - type: s3
           provider: credential_chain
