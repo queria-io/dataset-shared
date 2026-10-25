@@ -35,6 +35,7 @@ macro-paths: ["macros", "shared/macros"]
 
 - `macros/catalog.sql`: dbt-duckdb の `duckdb__get_catalog` オーバーライド。全アタッチ DB を対象にする修正
 - `macros/generate_schema_name.sql`: サブディレクトリ名をスキーマ名として使用
+- `macros/local_government_code.sql`: 5 桁の市区町村コードに検査数字を付けて 6 桁の全国地方公共団体コードにする（`{{ local_government_code('city_code') }}`）
 
 ## 雛形
 
