@@ -2,12 +2,6 @@ name: Checkpoint (reusable)
 
 on:
   workflow_call:
-    inputs:
-      s3_bucket:
-        # fdl のリポだけが使う。queria に移ったリポでは何も指さないので、
-        # 最後のリポが移り終わったら入力ごと外す
-        required: false
-        type: string
     secrets:
       # **`secrets: inherit` は所有者をまたがない。** 理由は sync.yml の同じ宣言を参照。
       #
@@ -46,11 +40,6 @@ jobs:
     env:
       # queria は誰のデータセットに書くのかをトークンから決める。R2 の鍵は渡さない
       QUERIA_TOKEN: ${{ secrets.QUERIA_TOKEN }}
-      # 以下 4 つは移行前のリポのみ。最後のリポが移り終わったら外す
-      FDL_S3_ENDPOINT: https://${{ secrets.CF_ACCOUNT_ID }}.r2.cloudflarestorage.com
-      FDL_S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
-      FDL_S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-      FDL_S3_BUCKET: ${{ inputs.s3_bucket }}
     steps:
       - uses: actions/checkout@v5
         with:

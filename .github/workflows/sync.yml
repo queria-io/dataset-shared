@@ -8,11 +8,6 @@ on:
         # 全リポの呼び出しから外したら、入力ごと外す
         required: false
         type: string
-      s3_bucket:
-        # fdl のリポだけが使う。queria に移ったリポでは何も指さないので、
-        # 最後のリポが移り終わったら入力ごと外す
-        required: false
-        type: string
       runs-on:
         # 取得元が日本国外を弾くリポは self-hosted (国内) を渡す
         description: 実行するランナー
@@ -80,11 +75,6 @@ jobs:
       # queria は誰のデータセットに書くのかをトークンから決める。R2 の鍵は渡さない
       # (一時認証情報を queria が取り、それも値ではなく取り方だけがビルドに渡る)
       QUERIA_TOKEN: ${{ secrets.QUERIA_TOKEN }}
-      # 以下 3 つは移行前のリポのみ。最後のリポが移り終わったら外す
-      FDL_S3_ENDPOINT: https://${{ secrets.CF_ACCOUNT_ID }}.r2.cloudflarestorage.com
-      FDL_S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
-      FDL_S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-      FDL_S3_BUCKET: ${{ inputs.s3_bucket }}
       CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
       CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
       CF_D1_DATABASE_ID: ${{ secrets.CF_D1_DATABASE_ID }}
