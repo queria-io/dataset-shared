@@ -12,7 +12,7 @@
 # uploads the new files and moves main; Queria publishes it.
 #
 # Environment:
-#   FDL_TOKEN    a Queria API token that may write the dataset (or `fdl login data.queria.io`)
+#   FDL_TOKEN    a Queria API token that may write the dataset (or `queria login` then `queria auth setup-git`)
 #   FDL_REMOTE   the repository (default: https://data.queria.io/datasets/queria/<name>/)
 #   FDL_MESSAGE  the version's message (default: build)
 #   FDL_AUTHOR   who made it (default: git's user.name)
