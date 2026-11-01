@@ -16,6 +16,7 @@
 #   FDL_REMOTE   the repository (default: https://data.queria.io/datasets/queria/<name>/)
 #   FDL_MESSAGE  the version's message (default: build)
 #   FDL_AUTHOR   who made it (default: git's user.name)
+#   QUERIA_USER_AGENT  the name the build reads data.queria.io under (default: queria-build/fdl-<version>)
 set -euo pipefail
 
 if [ "$#" -eq 0 ]; then
@@ -51,6 +52,10 @@ else:
 PY
 )"
 export FDL_DATA_PATH
+# Reads of other public datasets go by this name (profiles.yml's custom_user_agent),
+# so data.queria.io does not count the build among its users.
+QUERIA_USER_AGENT="${QUERIA_USER_AGENT:-queria-build/fdl-$(uv run python -c 'import importlib.metadata as m; print(m.version("fdl-cli"))')}"
+export QUERIA_USER_AGENT
 
 uv run "$@"
 
