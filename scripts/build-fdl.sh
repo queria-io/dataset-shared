@@ -16,6 +16,7 @@
 #   FDL_REMOTE   the repository (default: https://data.queria.io/datasets/queria/<name>/)
 #   FDL_MESSAGE  the version's message (default: build)
 #   FDL_AUTHOR   who made it (default: git's user.name)
+#   FDL_ASSETS   a folder with the files the asset columns point at (fdl commit --assets)
 #   QUERIA_USER_AGENT  the name the build reads data.queria.io under (default: queria-build/fdl-<version>)
 set -euo pipefail
 
@@ -60,4 +61,4 @@ export QUERIA_USER_AGENT
 uv run "$@"
 
 author="${FDL_AUTHOR:-$(git config user.name || echo build)}"
-uv run fdl commit "$work" -m "${FDL_MESSAGE:-build}" --author "$author"
+uv run fdl commit "$work" -m "${FDL_MESSAGE:-build}" --author "$author" ${FDL_ASSETS:+--assets "$FDL_ASSETS"}
