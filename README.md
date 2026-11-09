@@ -123,6 +123,33 @@ fdl で上げるデータセットは、新しいデータファイルを手元�
 書く量がランナーの空きに近いデータセットは `free_disk: true` を渡すと、ビルドの前に使わないツール
 （.NET・Android SDK・GHC・CodeQL）を消して空ける。前後の空きはログに出る。
 
+### 手元で流す作業を Issue に残す
+
+`.github/workflows/local-run.yml` は、GitHub ホステッドのランナーでは取り込めない更新
+（取得元が日本国外の IP を弾く、メモリが足りない など）を見つけたときに呼ぶ。
+手元で `scripts/build.sh` を流す作業を、organization の変数 `LOCAL_RUN_ISSUE_REPO`
+（`owner/name`）のリポジトリに Issue として立てる。同じデータセットの Issue が開いていれば
+コメントを足す。トークンは secret の `LOCAL_RUN_ISSUE_TOKEN`（そのリポジトリの Issues だけを
+書ける fine-grained token）で、変数かトークンが無いときは何もしない。
+
+```yaml
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      reason: ${{ steps.check.outputs.reason }}
+    steps:
+      - id: check
+        run: echo "reason=..." >> "$GITHUB_OUTPUT"  # 手元で流すときだけ空でない値を出す
+  local-run:
+    needs: check
+    if: needs.check.outputs.reason != ''
+    uses: queria-io/dataset-shared/.github/workflows/local-run.yml@main
+    with:
+      reason: ${{ needs.check.outputs.reason }}
+    secrets: inherit
+```
+
 ## 層の切り方
 
 出荷物の本体は Silver に置く。型が揃い名寄せ済みで、用途に依存しない粒度のもの。

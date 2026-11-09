@@ -1,0 +1,66 @@
+name: Local run (reusable)
+
+# GitHub ホステッドのランナーで取り込めない更新（取得元が日本国外の IP を弾く、
+# メモリが足りない など）を見つけたときに呼び、手元で build.sh を流す作業を
+# Issue として残す。
+#
+# Issue を立てる先は organization の変数 LOCAL_RUN_ISSUE_REPO（owner/name）、
+# トークンは secret の LOCAL_RUN_ISSUE_TOKEN（そのリポジトリの Issues だけを
+# 書ける fine-grained token）。どちらかが無いときは何もせずに終わる。
+#
+# 同じデータセットの Issue が開いていれば、新しく立てずにコメントを足す。
+
+on:
+  workflow_call:
+    inputs:
+      reason:
+        description: 手元で流す理由（更新があった統計表、取得できなかった URL など）
+        required: true
+        type: string
+    secrets:
+      LOCAL_RUN_ISSUE_TOKEN:
+        description: Issue を立てる先のリポジトリの Issues を書けるトークン
+        required: false
+
+jobs:
+  issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open or update the issue
+        env:
+          GH_TOKEN: ${{ secrets.LOCAL_RUN_ISSUE_TOKEN }}
+          ISSUE_REPO: ${{ vars.LOCAL_RUN_ISSUE_REPO }}
+          DATASET: ${{ github.event.repository.name }}
+          REASON: ${{ inputs.reason }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          if [ -z "$GH_TOKEN" ] || [ -z "$ISSUE_REPO" ]; then
+            echo "LOCAL_RUN_ISSUE_TOKEN か LOCAL_RUN_ISSUE_REPO が無いので Issue を立てない"
+            exit 0
+          fi
+
+          TITLE="$DATASET: 手元で build.sh を流す"
+          BODY=$(printf '%s\n' \
+            "## 理由" "" "$REASON" "" \
+            "## 手順" "" \
+            '```bash' \
+            "git clone $REPO_URL  # 取得済みなら git pull" \
+            "cd $DATASET" \
+            "scripts/build.sh" \
+            '```' "" \
+            "見つけた run: $RUN_URL" "" \
+            "build.sh が通ったらこの Issue を閉じる。")
+
+          gh label create local-run -R "$ISSUE_REPO" \
+            --description "手元で build.sh を流す" --color FBCA04 2>/dev/null || true
+
+          NUMBER=$(gh issue list -R "$ISSUE_REPO" --state open --label local-run \
+            --search "in:title $DATASET" --json number,title \
+            --jq "map(select(.title == \"$TITLE\"))[0].number // empty")
+
+          if [ -n "$NUMBER" ]; then
+            gh issue comment "$NUMBER" -R "$ISSUE_REPO" --body "$BODY"
+          else
+            gh issue create -R "$ISSUE_REPO" --title "$TITLE" --label local-run --body "$BODY"
+          fi
