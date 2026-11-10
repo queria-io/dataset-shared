@@ -18,8 +18,11 @@ SQL を足すのは作業場のカタログにあるテーブルとビューだ�
 from __future__ import annotations
 
 import json
+import os
+import re
 import sqlite3
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -45,52 +48,78 @@ def live_relations(working: Path) -> set[Key]:
         con.close()
 
 
-def _model(nodes: dict[str, Any], unique_id: str) -> dict[str, Any] | None:
-    node = nodes.get(unique_id)
-    return node if isinstance(node, dict) and node.get("resource_type") == "model" else None
-
-
-def _key(node: dict[str, Any]) -> Key:
-    return (str(node.get("schema", "")), str(node.get("name", "")))
-
-
 def compiled_sql(manifest: dict[str, Any], live: set[Key]) -> dict[Key, str]:
-    """カタログにあるモデルごとの、コンパイル済みの SQL。"""
-    nodes = manifest.get("nodes") or {}
+    """カタログにあるモデルごとの、コンパイル済みの SQL。
 
-    def sql_of(node: dict[str, Any]) -> str:
+    テーブルの名前は `alias` (`config(alias=...)`)、無ければモデルの名前。
+    Python のモデルの compiled_code は Python のコードなので含めない。
+    """
+    found: dict[Key, str] = {}
+    for node in (manifest.get("nodes") or {}).values():
+        if not isinstance(node, dict) or node.get("resource_type") != "model":
+            continue
+        if node.get("language", "sql") != "sql":
+            continue
         code = node.get("compiled_code")
-        return code.strip() if isinstance(code, str) else ""
-
-    return {
-        _key(node): sql_of(node)
-        for unique_id in nodes
-        if (node := _model(nodes, unique_id)) is not None
-        and _key(node) in live
-        and sql_of(node)
-    }
+        key = (str(node.get("schema", "")), str(node.get("alias") or node.get("name", "")))
+        if isinstance(code, str) and code.strip() and key in live:
+            found[key] = code.strip()
+    return found
 
 
-def _repository(path: str) -> str | None:
+_ENV_VAR = re.compile(
+    r"""\{\{\s*env_var\(\s*(['"])(.+?)\1\s*(?:,\s*(['"])(.*?)\3\s*)?\)\s*\}\}"""
+)
+
+
+def _render(text: str, env: Mapping[str, str]) -> str | None:
+    """``text`` の `{{ env_var('NAME', 'default') }}` を値に置き換える。値が決まらないときは None。"""
+    unresolved = False
+
+    def value(match: re.Match[str]) -> str:
+        nonlocal unresolved
+        name, default = match.group(2), match.group(4)
+        if name in env:
+            return env[name]
+        if default is None:
+            unresolved = True
+            return ""
+        return default
+
+    rendered = _ENV_VAR.sub(value, text)
+    return None if unresolved or "{" in rendered else rendered
+
+
+def _repository(path: str, env: Mapping[str, str]) -> str | None:
     """ATTACH の path (`ducklake:https://…/ducklake.duckdb`) から、リポジトリの URL。"""
-    url = path.removeprefix("ducklake:")
-    if not url.startswith(("https://", "http://")) or "{" in url:
+    rendered = _render(path, env)
+    if rendered is None:
+        return None
+    url = rendered.removeprefix("ducklake:")
+    if not url.startswith(("https://", "http://")):
         return None
     return url.removesuffix("ducklake.duckdb") if url.endswith("/ducklake.duckdb") else None
 
 
-def catalogs(profiles: dict[str, Any]) -> dict[str, str]:
+def _target(profile: dict[str, Any], env: Mapping[str, str]) -> dict[str, Any] | None:
+    """dbt が使うターゲット: DBT_TARGET、無ければプロファイルの `target` (既定は default)。"""
+    name = env.get("DBT_TARGET") or _render(str(profile.get("target") or "default"), env)
+    target = (profile.get("outputs") or {}).get(name)
+    return target if isinstance(target, dict) else None
+
+
+def catalogs(profiles: dict[str, Any], env: Mapping[str, str] | None = None) -> dict[str, str]:
     """プロファイルが読むだけで ATTACH する他のデータセットの、エイリアス → リポジトリの URL。"""
+    env = os.environ if env is None else env
     return {
         str(attach["alias"]): repository
         for name, profile in profiles.items()
         if name != "config" and isinstance(profile, dict)
-        for target in (profile.get("outputs") or {}).values()
-        if isinstance(target, dict)
+        and (target := _target(profile, env)) is not None
         for attach in target.get("attach") or []
         if isinstance(attach, dict)
         and attach.get("alias")
-        and (repository := _repository(str(attach.get("path", "")))) is not None
+        and (repository := _repository(str(attach.get("path", "")), env)) is not None
     }
 
 
@@ -99,6 +128,7 @@ def with_lineage(
 ) -> dict[str, Any]:
     """記述の表に `sql` を、記述に `catalogs` を足す。書き手の値が勝つ。記述に無い表は足す。"""
     tables = declared.get("tables") or []
+    written = declared.get("catalogs") or {}
     described = {(t.get("schema"), t.get("name")) for t in tables if isinstance(t, dict)}
 
     def enrich(table: Any) -> Any:
@@ -114,21 +144,22 @@ def with_lineage(
     ]
     return {
         **declared,
-        **({"catalogs": {**aliases, **(declared.get("catalogs") or {})}} if aliases else {}),
+        # 書き手の catalogs が対応表でないときはそのまま渡し、fdl commit に断らせる
+        **({"catalogs": {**aliases, **written}} if aliases and isinstance(written, dict) else {}),
         "tables": [*map(enrich, tables), *added],
     }
 
 
 def stage(declared: dict[str, Any], root: Path, out: Path) -> Path:
     """fdl commit に渡す記述を ``out`` に書く。README.md と docs/ は ``root`` のものを指す。"""
+    from fdl import dataset
+
     out.mkdir(parents=True, exist_ok=True)
     for name in ("README.md", "docs"):
         if (root / name).exists() and not (out / name).exists():
             (out / name).symlink_to((root / name).resolve())
     path = out / "dataset.json"
-    path.write_text(
-        json.dumps(declared, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8"
-    )
+    path.write_bytes(dataset.to_json(declared))
     return path
 
 
@@ -145,10 +176,12 @@ def main(argv: list[str]) -> int:
     profiles = (
         yaml.safe_load(profiles_path.read_text(encoding="utf-8")) if profiles_path.is_file() else {}
     )
+    # catalogs を知らない fdl (0.21 まで) は、知らないキーとして記述ごと断る
+    aliases = catalogs(profiles or {}) if "catalogs" in dataset.DATASET_KEYS else {}
     declared = with_lineage(
         dataset.gather(description),
         compiled_sql(manifest, live_relations(working)),
-        catalogs(profiles or {}),
+        aliases,
     )
     print(stage(declared, description.resolve().parent, out))
     return 0

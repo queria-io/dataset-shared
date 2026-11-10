@@ -24,10 +24,12 @@ MANIFEST = {
         "model.p.scratch": _model("scratch", code="select 2"),
         "model.p.empty": _model("empty", code=""),
         "test.p.t": {"resource_type": "test", "schema": "main", "name": "raw", "compiled_code": "x"},
+        "model.p.main_renamed": {**_model("main_renamed", code="select 3"), "alias": "renamed"},
+        "model.p.py": {**_model("py", code="def model(dbt, session): ..."), "language": "python"},
     },
 }
 
-LIVE = {("main", "raw"), ("main", "empty")}
+LIVE = {("main", "raw"), ("main", "empty"), ("main", "renamed"), ("main", "py")}
 
 PROFILES = {
     "config": {"send_anonymous_usage_stats": False},
@@ -50,14 +52,53 @@ PROFILES = {
 
 class CompiledSqlTest(unittest.TestCase):
     def test_only_models_in_the_catalog_with_sql(self):
-        self.assertEqual(dbt_lineage.compiled_sql(MANIFEST, LIVE), {("main", "raw"): "select 1"})
+        self.assertEqual(
+            dbt_lineage.compiled_sql(MANIFEST, LIVE),
+            {("main", "raw"): "select 1", ("main", "renamed"): "select 3"},
+        )
 
 
 class CatalogsTest(unittest.TestCase):
     def test_public_datasets_the_profile_attaches(self):
         self.assertEqual(
-            dbt_lineage.catalogs(PROFILES),
+            dbt_lineage.catalogs(PROFILES, env={}),
             {"e_stat": "https://data.queria.io/datasets/queria/e_stat/"},
+        )
+
+    def test_env_var_with_a_default(self):
+        url = "ducklake:https://data.queria.io/datasets/queria/houjin_bangou/ducklake.duckdb"
+        profiles = {
+            "p": {
+                "outputs": {
+                    "default": {
+                        "attach": [
+                            {"path": f"{{{{ env_var('HOUJIN_BANGOU', '{url}') }}}}", "alias": "houjin_bangou"},
+                        ]
+                    }
+                }
+            }
+        }
+        self.assertEqual(
+            dbt_lineage.catalogs(profiles, env={}),
+            {"houjin_bangou": "https://data.queria.io/datasets/queria/houjin_bangou/"},
+        )
+        self.assertEqual(dbt_lineage.catalogs(profiles, env={"HOUJIN_BANGOU": "ducklake:/tmp/h.duckdb"}), {})
+
+    def test_only_the_target_in_use(self):
+        stg = {"path": "ducklake:https://stg.example.org/e_stat/ducklake.duckdb", "alias": "e_stat"}
+        profiles = {
+            "geo": {
+                "target": "default",
+                "outputs": {**PROFILES["geo"]["outputs"], "stg": {"attach": [stg]}},
+            }
+        }
+        self.assertEqual(
+            dbt_lineage.catalogs(profiles, env={}),
+            {"e_stat": "https://data.queria.io/datasets/queria/e_stat/"},
+        )
+        self.assertEqual(
+            dbt_lineage.catalogs(profiles, env={"DBT_TARGET": "stg"}),
+            {"e_stat": "https://stg.example.org/e_stat/"},
         )
 
 
@@ -79,6 +120,10 @@ class WithLineageTest(unittest.TestCase):
         out = dbt_lineage.with_lineage({"name": "geo"}, self.SQL, {})
         self.assertEqual([t["name"] for t in out["tables"]], ["mart", "raw"])
         self.assertNotIn("catalogs", out)
+
+    def test_leaves_malformed_catalogs_to_fdl(self):
+        out = dbt_lineage.with_lineage({"name": "geo", "catalogs": ["e_stat"]}, {}, self.ALIASES)
+        self.assertEqual(out["catalogs"], ["e_stat"])
 
 
 class LiveRelationsTest(unittest.TestCase):

@@ -58,14 +58,14 @@ export FDL_DATA_PATH
 QUERIA_USER_AGENT="${QUERIA_USER_AGENT:-queria-build/fdl-$(uv run python -c 'import importlib.metadata as m; print(m.version("fdl-cli"))')}"
 export QUERIA_USER_AGENT
 
-touch .fdl/build-started
+# 前に手元で回した dbt の manifest を読まないように、ビルドの前に消す
+rm -f target/manifest.json
 uv run "$@"
 
 # dbt で作ったときは、モデルの SQL と、他のデータセットのエイリアス (profiles.yml の attach) を
 # 記述に書き足してから渡す。依存先は fdl commit が SQL から作る (scripts/dbt_lineage.py)。
-# 今回のビルドが書いた manifest だけを使う。前に手元で回した dbt の target/ は読まない
 describe=()
-if [ target/manifest.json -nt .fdl/build-started ]; then
+if [ -f target/manifest.json ]; then
     described="$(uv run python "$(dirname "$0")/dbt_lineage.py" "$work" target/manifest.json "${DBT_PROFILES_DIR:-.}/profiles.yml" .fdl/describe)"
     describe=(--dataset "$described")
 fi
