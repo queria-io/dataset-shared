@@ -17,6 +17,9 @@
 #   FDL_MESSAGE  the version's message (default: build)
 #   FDL_AUTHOR   who made it (default: git's user.name)
 #   FDL_ASSETS   a folder with the files the asset columns point at (fdl commit --assets)
+#   FDL_DIRECT   0 to keep new data files in a local folder until the commit, even when
+#                Queria gives a key to write them straight to storage (default: 1)
+#   FDL_KEY_TTL  how long that key lasts, in seconds (default and at most: 12 hours)
 #   QUERIA_USER_AGENT  the name the build reads data.queria.io under (default: queria-build/fdl-<version>)
 set -euo pipefail
 
@@ -32,9 +35,22 @@ fi
 remote="${FDL_REMOTE:-https://data.queria.io/datasets/queria/$name/}"
 work=".fdl/work.sqlite"
 
+# New data files go straight to the dataset's storage when Queria gives a key to
+# its data/ (write and read, no delete): nothing stays on this machine, so a small
+# disk can build a large dataset. Without one, checkout keeps them in a local folder
+# that the commit uploads.
+storage=()
+# (An fdl older than checkout --storage keeps the local folder.)
+if [ "${FDL_DIRECT:-1}" != 0 ] && uv run fdl checkout --help 2>/dev/null | grep -- --storage >/dev/null \
+    && keys="$(uv run python "$(dirname "$0")/storage_key.py" issue "$remote")"; then
+    eval "$keys"
+    trap 'uv run python "$(dirname "$0")/storage_key.py" drop || true' EXIT
+    storage=(--storage "$FDL_STORAGE")
+fi
+
 # Every build starts from what is published now, so a version is built on main.
 rm -rf .fdl
-uv run fdl checkout "$remote" "$work"
+uv run fdl checkout "$remote" "$work" ${storage[@]+"${storage[@]}"}
 export FDL_WORKING="$PWD/$work"
 # Where the build writes new data files. Over HTTP checkout keeps them in a local
 # folder (recorded beside the working catalog) until commit uploads them;
