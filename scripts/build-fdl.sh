@@ -42,8 +42,11 @@ work=".fdl/work.sqlite"
 # whenever storage refuses the old (scripts/storage_key.py). Without one, checkout
 # keeps new files in a local folder that the commit uploads.
 storage=()
-# (An fdl older than checkout --storage keeps the local folder.)
-if [ "${FDL_DIRECT:-1}" != 0 ] && uv run fdl checkout --help 2>/dev/null | grep -- --storage >/dev/null \
+# (An fdl older than checkout --storage keeps the local folder.) The help is read
+# without colors: on GitHub Actions typer colors it, which splits "--storage".
+if [ "${FDL_DIRECT:-1}" != 0 ] \
+    && env -u GITHUB_ACTIONS -u FORCE_COLOR -u PY_COLORS uv run fdl checkout --help 2>/dev/null \
+        | grep -- --storage >/dev/null \
     && keys="$(uv run python "$(dirname "$0")/storage_key.py" issue "$remote")"; then
     eval "$keys"
     trap 'uv run python "$(dirname "$0")/storage_key.py" drop || true' EXIT
