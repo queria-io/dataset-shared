@@ -6,6 +6,8 @@
 import contextlib
 import io
 import json
+import subprocess
+import os
 import sys
 import tempfile
 import unittest
@@ -149,6 +151,35 @@ class StorageKeyTest(unittest.TestCase):
             self.assertEqual(storage_key.drop(), 0)
         with mock.patch.dict("os.environ", {"FDL_STORAGE_SECRET": "other; DROP"}, clear=True):
             self.assertEqual(storage_key.drop(), 0)
+
+    def test_drop_deletes_the_secret_and_its_folder(self):
+        name = "fdl_build_0123"
+        with tempfile.TemporaryDirectory() as home:
+            folder = Path(tempfile.mkdtemp(prefix=f"{name}.", dir=home))
+            config = folder / "aws.config"
+            config.write_text("")
+            # A persistent secret lives under $HOME/.duckdb, so each step runs in
+            # its own process with HOME pointed at the temporary folder.
+            env = {**os.environ, "HOME": home, "FDL_STORAGE_SECRET": name, "AWS_CONFIG_FILE": str(config)}
+
+            def run(code: str) -> str:
+                return subprocess.run(
+                    [sys.executable, "-c", code], env=env, check=True, capture_output=True, text=True
+                ).stdout
+
+            secrets = (
+                "import duckdb; c = duckdb.connect(); c.execute('LOAD httpfs');"
+                "print([r[0] for r in c.execute('SELECT name FROM duckdb_secrets() WHERE persistent').fetchall()])"
+            )
+            run(
+                "import duckdb; c = duckdb.connect(); c.execute('INSTALL httpfs; LOAD httpfs');"
+                f"c.execute(\"CREATE PERSISTENT SECRET {name} (TYPE s3, KEY_ID 'a', SECRET 'b')\")"
+            )
+            self.assertIn(name, run(secrets))
+            run(f"import sys; sys.path.insert(0, {str(Path(storage_key.__file__).parent)!r});"
+                "import storage_key; storage_key.drop()")
+            self.assertNotIn(name, run(secrets))
+            self.assertFalse(folder.exists())
 
     def test_no_token_means_no_key(self):
         with mock.patch.dict("os.environ", {}, clear=True):
