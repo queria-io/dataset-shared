@@ -25,6 +25,12 @@ scripts/build.sh
 
 `scripts/build-dataset.sh` は dbt を回す前に、データセットの `profiles.yml` を一時ディレクトリへ写して `queria.dbt_plugin` を足し、`DBT_PROFILES_DIR` をそこへ向ける。DuckDB はプロファイルの S3 secret を作るときにしか認証情報を取らないので、15 分を超える dbt の実行はこのプラグインが取り直す。リポジトリの `profiles.yml` は書き換えない。入っている queria にこのモジュールが無いとき、または `DBT_PROFILES_DIR` を自分で指定しているときは何もしない（`scripts/with_dbt_plugin.py`）。
 
+## データファイルの書き込み先（fdl のデータセット）
+
+`scripts/build-fdl.sh` は、`FDL_TOKEN` があれば Queria にデータセットの `data/` だけに書ける鍵（削除はできない）を頼みます（`scripts/storage_key.py`）。鍵が出れば `fdl checkout --storage` で、ビルドは新しいデータファイルを R2 に直接書きます。手元にファイルを置かないので、ディスクの小さいマシンでも大きいデータセットを作れます。鍵の有効期限は数分です。DuckDB の永続 secret を `PROVIDER credential_chain`（`REFRESH auto`）で作るので、期限が切れてストレージに断られると、DuckDB が `storage_key.py credential-process` で新しい鍵を取り直して続けます。鍵の値は環境変数にもログにも出ません。secret と AWS の設定ファイルは、ビルドが終わると消します。
+
+鍵が出ないとき（`FDL_TOKEN` が無い、Queria が断った、fdl が古い）や `FDL_DIRECT=0` のときは、これまでどおり手元のフォルダに書いてコミットでアップロードします。
+
 ## 提供マクロ
 
 `macros/` に共通の dbt マクロを配置。各データセットの `dbt_project.yml` で参照する:
