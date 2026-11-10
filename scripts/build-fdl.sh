@@ -61,11 +61,12 @@ export QUERIA_USER_AGENT
 touch .fdl/build-started
 uv run "$@"
 
-# dbt で作ったときは、モデルの SQL と依存先を記述に書き足してから渡す (scripts/dbt_lineage.py)。
+# dbt で作ったときは、モデルの SQL と、他のデータセットのエイリアス (profiles.yml の attach) を
+# 記述に書き足してから渡す。依存先は fdl commit が SQL から作る (scripts/dbt_lineage.py)。
 # 今回のビルドが書いた manifest だけを使う。前に手元で回した dbt の target/ は読まない
 describe=()
 if [ target/manifest.json -nt .fdl/build-started ]; then
-    described="$(uv run python "$(dirname "$0")/dbt_lineage.py" "$work" target/manifest.json .fdl/describe)"
+    described="$(uv run python "$(dirname "$0")/dbt_lineage.py" "$work" target/manifest.json "${DBT_PROFILES_DIR:-.}/profiles.yml" .fdl/describe)"
     describe=(--dataset "$described")
 fi
 

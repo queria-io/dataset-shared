@@ -1,19 +1,18 @@
-"""dbt が作ったテーブルの SQL と依存先を、fdl commit に渡す記述に書き足す。
+"""dbt が作ったテーブルの SQL と、他のデータセットのエイリアスを、fdl commit に渡す記述に書き足す。
 
-使い方: python dbt_lineage.py <作業場のカタログ> <manifest.json> <出力先のフォルダ>
+使い方: python dbt_lineage.py <作業場のカタログ> <manifest.json> <profiles.yml> <出力先のフォルダ>
 
-fdl commit は dataset.yml と *.table.yml に書かれたことしか dataset.json に入れない。
-dbt のモデルの SQL (compiled_code) と依存先 (parent_map) はそこに無いので、
-Queria の画面のリネージュとテーブルの SQL が空になる。ここで manifest から
-`sql` と `depends_on` (`"{schema}.{name}"` の配列) を書き足す。書き手が記述に書いた値が勝つ。
+fdl commit は SQL を持つテーブルの depends_on を、その SQL から作る。dbt で作ったテーブルの
+SQL (compiled_code) はカタログに残らないので、ここで manifest から `sql` を書き足す。
+SQL の中の他のデータセットはエイリアス (`e_stat.census.…`) で書かれているので、profiles.yml が
+読むだけで ATTACH する公開データセットから `catalogs` (エイリアス → リポジトリの URL) を作る。
+どちらも書き手が記述に書いた値が勝つ。
 
 出力先のフォルダには、表をすべて含めた dataset.json と、README.md・docs/ へのリンクを置く。
 fdl commit は記述のあるフォルダから *.table.yml と README.md・docs/ を探すので、
 元のフォルダの記述を渡すと表が 2 度記述されたことになる。
 
-足すのは作業場のカタログにあるテーブルとビューだけ。依存先は同じデータベースに書かれた
-モデルだけで、別のデータベースのモデル (メモリ上の作業用テーブルなど) はその親をたどる。
-ソース (他のデータセットや取り込んだファイル) は依存先に入れない。
+SQL を足すのは作業場のカタログにあるテーブルとビューだけ。
 """
 
 from __future__ import annotations
@@ -55,72 +54,69 @@ def _key(node: dict[str, Any]) -> Key:
     return (str(node.get("schema", "")), str(node.get("name", "")))
 
 
-def _database(node: dict[str, Any]) -> str | None:
-    database = node.get("database")
-    return database.lower() if isinstance(database, str) else None
-
-
-def _parents(manifest: dict[str, Any], unique_id: str) -> list[str]:
-    """同じデータベースに書かれた親のモデル。別のデータベースのモデルは、その親をたどる。"""
-    nodes = manifest.get("nodes") or {}
-    parent_map = manifest.get("parent_map") or {}
-    database = _database(nodes[unique_id])
-
-    # 親の数だけ再帰が深くなるので、ループでたどる
-    found: set[Key] = set()
-    seen: set[str] = set()
-    pending = list(parent_map.get(unique_id) or [])
-    while pending:
-        parent_id = pending.pop()
-        if parent_id in seen:
-            continue
-        seen.add(parent_id)
-        parent = _model(nodes, parent_id)
-        if parent is None:
-            continue
-        if _database(parent) == database:
-            found.add(_key(parent))
-        else:
-            pending.extend(parent_map.get(parent_id) or [])
-    return sorted(f"{schema}.{name}" for schema, name in found - {_key(nodes[unique_id])})
-
-
-def lineage(manifest: dict[str, Any], live: set[Key]) -> dict[Key, dict[str, Any]]:
-    """カタログにあるモデルごとの `sql` と `depends_on`。値の無い項目は入れない。"""
+def compiled_sql(manifest: dict[str, Any], live: set[Key]) -> dict[Key, str]:
+    """カタログにあるモデルごとの、コンパイル済みの SQL。"""
     nodes = manifest.get("nodes") or {}
 
-    def entry(unique_id: str, node: dict[str, Any]) -> dict[str, Any]:
+    def sql_of(node: dict[str, Any]) -> str:
         code = node.get("compiled_code")
-        sql = code.strip() if isinstance(code, str) else ""
-        depends_on = _parents(manifest, unique_id)
-        return {
-            **({"sql": sql} if sql else {}),
-            **({"depends_on": depends_on} if depends_on else {}),
-        }
+        return code.strip() if isinstance(code, str) else ""
 
     return {
-        _key(node): entry(unique_id, node)
+        _key(node): sql_of(node)
         for unique_id in nodes
-        if (node := _model(nodes, unique_id)) is not None and _key(node) in live
+        if (node := _model(nodes, unique_id)) is not None
+        and _key(node) in live
+        and sql_of(node)
     }
 
 
-def with_lineage(declared: dict[str, Any], found: dict[Key, dict[str, Any]]) -> dict[str, Any]:
-    """記述の表に `sql` と `depends_on` を足す。書き手の値が勝つ。記述に無い表は足す。"""
+def _repository(path: str) -> str | None:
+    """ATTACH の path (`ducklake:https://…/ducklake.duckdb`) から、リポジトリの URL。"""
+    url = path.removeprefix("ducklake:")
+    if not url.startswith(("https://", "http://")) or "{" in url:
+        return None
+    return url.removesuffix("ducklake.duckdb") if url.endswith("/ducklake.duckdb") else None
+
+
+def catalogs(profiles: dict[str, Any]) -> dict[str, str]:
+    """プロファイルが読むだけで ATTACH する他のデータセットの、エイリアス → リポジトリの URL。"""
+    return {
+        str(attach["alias"]): repository
+        for name, profile in profiles.items()
+        if name != "config" and isinstance(profile, dict)
+        for target in (profile.get("outputs") or {}).values()
+        if isinstance(target, dict)
+        for attach in target.get("attach") or []
+        if isinstance(attach, dict)
+        and attach.get("alias")
+        and (repository := _repository(str(attach.get("path", "")))) is not None
+    }
+
+
+def with_lineage(
+    declared: dict[str, Any], sql: dict[Key, str], aliases: dict[str, str]
+) -> dict[str, Any]:
+    """記述の表に `sql` を、記述に `catalogs` を足す。書き手の値が勝つ。記述に無い表は足す。"""
     tables = declared.get("tables") or []
     described = {(t.get("schema"), t.get("name")) for t in tables if isinstance(t, dict)}
 
     def enrich(table: Any) -> Any:
         if not isinstance(table, dict):
             return table
-        return {**found.get((table.get("schema"), table.get("name")), {}), **table}
+        found = sql.get((table.get("schema"), table.get("name")))
+        return {**({"sql": found} if found else {}), **table}
 
     added = [
-        {"schema": schema, "name": name, **extra}
-        for (schema, name), extra in sorted(found.items())
-        if (schema, name) not in described and extra
+        {"schema": schema, "name": name, "sql": code}
+        for (schema, name), code in sorted(sql.items())
+        if (schema, name) not in described
     ]
-    return {**declared, "tables": [*map(enrich, tables), *added]}
+    return {
+        **declared,
+        **({"catalogs": {**aliases, **(declared.get("catalogs") or {})}} if aliases else {}),
+        "tables": [*map(enrich, tables), *added],
+    }
 
 
 def stage(declared: dict[str, Any], root: Path, out: Path) -> Path:
@@ -137,15 +133,23 @@ def stage(declared: dict[str, Any], root: Path, out: Path) -> Path:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 3:
+    if len(argv) != 4:
         print(__doc__.splitlines()[2], file=sys.stderr)
         return 2
-    working, manifest_path, out = map(Path, argv)
+    working, manifest_path, profiles_path, out = map(Path, argv)
+    import yaml  # dbt が依存に持つ
     from fdl import dataset  # fdl-cli はデータセットの依存に入っている
 
     description = dataset.find()
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    declared = with_lineage(dataset.gather(description), lineage(manifest, live_relations(working)))
+    profiles = (
+        yaml.safe_load(profiles_path.read_text(encoding="utf-8")) if profiles_path.is_file() else {}
+    )
+    declared = with_lineage(
+        dataset.gather(description),
+        compiled_sql(manifest, live_relations(working)),
+        catalogs(profiles or {}),
+    )
     print(stage(declared, description.resolve().parent, out))
     return 0
 
