@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Build a dataset with fdl: check out the published version, build on it, and
 # commit a new version back to Queria. Called from each dataset's scripts/build.sh.
+# `queria validate` runs between the build and the commit, so a failed check
+# makes no version.
 #
 # Usage:
 #   scripts/build.sh                  # build and publish
@@ -59,6 +61,13 @@ QUERIA_USER_AGENT="${QUERIA_USER_AGENT:-queria-build/fdl-$(uv run python -c 'imp
 export QUERIA_USER_AGENT
 
 uv run "$@"
+
+# Queria's checks before the version is made: the values Queria reads (licenses,
+# annotations.queria) and each table's primary_key against the data just built.
+# The dataset's own environment may not hold queria, so it runs as a tool.
+# @latest: uvx otherwise reuses whatever queria it cached first, and a queria
+# from before fdl datasets were understood refuses every annotations key.
+uvx queria@latest validate --quiet
 
 author="${FDL_AUTHOR:-$(git config user.name || echo build)}"
 uv run fdl commit "$work" -m "${FDL_MESSAGE:-build}" --author "$author" ${FDL_ASSETS:+--assets "$FDL_ASSETS"}
