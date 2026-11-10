@@ -10,8 +10,9 @@
 #
 # The build reads and writes the working catalog fdl checks out: FDL_WORKING is
 # its path and FDL_DATA_PATH the folder new data files go to (profiles.yml
-# attaches both). fdl commit freezes it into a version described by dataset.yml,
-# uploads the new files and moves main; Queria publishes it.
+# attaches both). fdl commit freezes it into a version described by dataset.yml;
+# fdl push uploads the new files and moves main; Queria publishes it. An fdl
+# without push still does both in commit.
 #
 # Environment:
 #   FDL_TOKEN    a Queria API token that may write the dataset (or `queria login`, which lets fdl ask queria for it).
@@ -112,3 +113,6 @@ fi
 
 author="${FDL_AUTHOR:-$(git config user.name || echo build)}"
 uv run fdl commit "$work" -m "${FDL_MESSAGE:-build}" --author "$author" ${describe[@]+"${describe[@]}"} ${FDL_ASSETS:+--assets "$FDL_ASSETS"}
+if uv run fdl push --help >/dev/null 2>&1; then
+    uv run fdl push "$work"
+fi
