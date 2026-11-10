@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Build a dataset with fdl: check out the published version, build on it, and
 # commit a new version back to Queria. Called from each dataset's scripts/build.sh.
+# `queria validate` runs between the build and the commit, so a failed check
+# makes no version.
 #
 # Usage:
 #   scripts/build.sh                  # build and publish
@@ -61,6 +63,13 @@ export QUERIA_USER_AGENT
 # 前に手元で回した dbt の manifest を読まないように、ビルドの前に消す
 rm -f target/manifest.json
 uv run "$@"
+
+# Queria's checks before the version is made: the values Queria reads (licenses,
+# annotations.queria) and each table's primary_key against the data just built.
+# The dataset's own environment may not hold queria, so it runs as a tool.
+# @latest: uvx otherwise reuses whatever queria it cached first, and a queria
+# from before fdl datasets were understood refuses every annotations key.
+uvx queria@latest validate --quiet
 
 # dbt で作ったときは、モデルの SQL と、他のデータセットのエイリアス (profiles.yml の attach) を
 # 記述に書き足してから渡す。依存先は fdl commit が SQL から作る (scripts/dbt_lineage.py)。
