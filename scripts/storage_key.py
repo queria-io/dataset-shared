@@ -3,8 +3,10 @@
 Usage:
   python storage_key.py issue <remote>               print `export` lines for the shell,
                                                      and save a DuckDB secret for the build
-  python storage_key.py credential-process <remote>  print one key, the way AWS's
-                                                     credential_process wants it
+  python storage_key.py credential-process <remote> [<first>]
+                                                     print one key, the way AWS's
+                                                     credential_process wants it (the one
+                                                     saved in <first> once, if given)
   python storage_key.py drop                         delete that secret and its AWS config
 
 Queria gives a key to the dataset's `data/` only (it reads and writes, and cannot
@@ -22,7 +24,9 @@ profiles.yml.
 Each build names its own secret and config (printed as FDL_STORAGE_SECRET and
 AWS_CONFIG_FILE), so builds running side by side on one machine do not replace or
 delete each other's. `drop` deletes them; build-fdl.sh does so when the build
-ends, however it ends.
+ends, however it ends. Every secret names the same profile, so whichever secret of
+a dataset DuckDB picks (another build's, or one a killed build left behind), it
+takes its next key through this build's config.
 
 Exit codes of `issue`: 0 printed the exports; 1 no key (no FDL_TOKEN, a remote
 outside Queria, or Queria refused): build through a local folder as before.
@@ -38,12 +42,17 @@ import shlex
 import shutil
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 
-#: The prefix of the persistent secret, AWS profile and folder each build makes.
+#: The prefix of the persistent secret and folder each build makes.
 SECRET = "fdl_build"
+#: The AWS profile in each build's config that runs `credential-process`.
+PROFILE = "fdl_build"
+#: The longest wait for a key when Queria answers 429 with Retry-After (a key's life).
+MAX_WAIT = 15 * 60
 #: Where each data host's API is.
 API = {"data.queria.io": "https://queria.io"}
 
@@ -88,6 +97,9 @@ def storage_of(answer: dict) -> dict[str, str]:
         "endpoint": storage["endpoint"],
         "region": storage.get("region") or "auto",
         "root": f"s3://{storage['bucket']}/{storage['base_prefix']}",
+        # The key reaches data/ alone, so the secret is used there alone: a 403
+        # elsewhere would only make DuckDB take a new key that is refused again.
+        "data": f"s3://{storage['bucket']}/{storage['prefix']}",
     }
 
 
@@ -107,20 +119,21 @@ def secret_sql(name: str, storage: dict[str, str]) -> str:
     host = re.sub(r"^https?://", "", endpoint).rstrip("/")
     return (
         f"CREATE OR REPLACE PERSISTENT SECRET {name} (TYPE s3, "
-        f"PROVIDER credential_chain, CHAIN 'process', PROFILE {quoted(name)}, REFRESH auto, "
+        f"PROVIDER credential_chain, CHAIN 'process', PROFILE {quoted(PROFILE)}, REFRESH auto, "
         f"ENDPOINT {quoted(host)}, URL_STYLE 'path', USE_SSL {use_ssl}, "
         f"REGION {quoted(storage['region'])}, "
-        f"SCOPE {quoted(storage['root'])})"
+        f"SCOPE {quoted(storage['data'])})"
     )
 
 
-def aws_config(name: str, remote: str) -> str:
+def aws_config(remote: str, first: Path) -> str:
     # The process runs in later build steps, after an ephemeral environment that ran
     # `issue` may be gone; it needs nothing outside the standard library, so the
     # base interpreter does.
     python = getattr(sys, "_base_executable", "") or sys.executable
-    command = shlex.join([python, str(Path(__file__).resolve()), "credential-process", remote])
-    return f"[profile {name}]\ncredential_process = {command}\n"
+    script = str(Path(__file__).resolve())
+    command = shlex.join([python, script, "credential-process", remote, str(first)])
+    return f"[profile {PROFILE}]\ncredential_process = {command}\n"
 
 
 def _ask(remote: str) -> dict | None:
@@ -131,9 +144,46 @@ def _ask(remote: str) -> dict | None:
     return request(url, token)
 
 
-def credential_process(remote: str) -> int:
+def _wait(exc: urllib.error.HTTPError) -> int | None:
+    """Seconds until Queria has room for another key, from a 429's Retry-After."""
+    if exc.code != 429:
+        return None
     try:
-        answer = _ask(remote)
+        seconds = int(exc.headers.get("Retry-After", ""))
+    except ValueError:
+        return None
+    return seconds if 0 < seconds <= MAX_WAIT else None
+
+
+def _take_first(first: Path | None) -> str | None:
+    """The key `issue` saved for the secret's creation, once."""
+    if first is None:
+        return None
+    try:
+        key = first.read_text()
+    except FileNotFoundError:
+        return None
+    first.unlink(missing_ok=True)
+    return key
+
+
+def credential_process(remote: str, first: Path | None = None) -> int:
+    key = _take_first(first)
+    if key:
+        print(key)
+        return 0
+    try:
+        try:
+            answer = _ask(remote)
+        except urllib.error.HTTPError as exc:
+            # Queria limits how many keys live at once and says when one expires.
+            # Failing here would stop a build mid-way, so wait for that once.
+            wait = _wait(exc)
+            if wait is None:
+                raise
+            print(f"storage key: waiting {wait}s for Queria to give another key", file=sys.stderr)
+            time.sleep(wait)
+            answer = _ask(remote)
         if answer is None:
             print("storage key: needs FDL_TOKEN and a Queria remote", file=sys.stderr)
             return 1
@@ -150,19 +200,38 @@ def issue(remote: str) -> int:
         if answer is None:
             return 1
         storage = storage_of(answer)
+        key = json.dumps(key_of(answer))
     except (urllib.error.URLError, OSError, KeyError, ValueError) as exc:
         print(f"storage key: none ({exc}); building through a local folder", file=sys.stderr)
         return 1
-    import duckdb
+    try:
+        import duckdb
+    except ImportError as exc:
+        print(f"storage key: none ({exc}); building through a local folder", file=sys.stderr)
+        return 1
 
     name = f"{SECRET}_{secrets.token_hex(8)}"
-    config = Path(tempfile.mkdtemp(prefix=f"{name}.")) / "aws.config"
-    config.write_text(aws_config(name, remote))
+    folder = Path(tempfile.mkdtemp(prefix=f"{name}."))
+    config = folder / "aws.config"
+    # Creating the secret runs the process once; it hands over this key rather
+    # than asking Queria for a second one, which would hold another of the
+    # account's live keys for nothing.
+    first = folder / "first.json"
+    first.write_text(key)
+    config.write_text(aws_config(remote, first))
     os.environ["AWS_CONFIG_FILE"] = str(config)
-    con = duckdb.connect()
-    con.execute("INSTALL httpfs; LOAD httpfs; INSTALL aws; LOAD aws;")
-    con.execute(secret_sql(name, storage))
-    con.close()
+    try:
+        con = duckdb.connect()
+        try:
+            con.execute("INSTALL httpfs; LOAD httpfs; INSTALL aws; LOAD aws;")
+            con.execute(secret_sql(name, storage))
+        finally:
+            con.close()
+    except duckdb.Error as exc:
+        shutil.rmtree(folder, ignore_errors=True)
+        print(f"storage key: no secret ({exc}); building through a local folder", file=sys.stderr)
+        return 1
+    first.unlink(missing_ok=True)
     for key, value in {
         "AWS_CONFIG_FILE": str(config),
         "FDL_STORAGE": storage["root"],
@@ -191,8 +260,8 @@ def drop() -> int:
 def main(argv: list[str]) -> int:
     if argv[:1] == ["issue"] and len(argv) == 2:
         return issue(argv[1])
-    if argv[:1] == ["credential-process"] and len(argv) == 2:
-        return credential_process(argv[1])
+    if argv[:1] == ["credential-process"] and len(argv) in (2, 3):
+        return credential_process(argv[1], Path(argv[2]) if len(argv) == 3 else None)
     if argv == ["drop"]:
         return drop()
     print(__doc__, file=sys.stderr)
