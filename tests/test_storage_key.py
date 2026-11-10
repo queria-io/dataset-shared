@@ -9,6 +9,7 @@ import json
 import sys
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest import mock
 
@@ -84,7 +85,7 @@ class StorageKeyTest(unittest.TestCase):
             process.write_text(f"#!/bin/sh\ncat {key}\n")
             process.chmod(0o755)
             config = Path(folder) / "aws.config"
-            config.write_text(f"[profile {name}]\ncredential_process = {process}\n")
+            config.write_text(f"[profile {storage_key.PROFILE}]\ncredential_process = {process}\n")
             with mock.patch.dict("os.environ", {"AWS_CONFIG_FILE": str(config)}):
                 con = duckdb.connect()
                 con.execute("INSTALL httpfs; LOAD httpfs; INSTALL aws; LOAD aws;")
@@ -96,10 +97,52 @@ class StorageKeyTest(unittest.TestCase):
         self.assertIn("'refresh': auto", secret)
         self.assertIn("endpoint=acct.r2.cloudflarestorage.com", secret)
 
+    def test_the_secret_is_scoped_to_data_alone(self):
+        sql = storage_key.secret_sql("fdl_build_0123", storage_key.storage_of(ANSWER))
+        self.assertIn("SCOPE 's3://queria/019a4f2b/data/'", sql)
+        self.assertIn(f"PROFILE '{storage_key.PROFILE}'", sql)
+
     def test_the_profile_runs_this_script(self):
-        config = storage_key.aws_config("fdl_build_0123", REMOTE)
-        self.assertIn("[profile fdl_build_0123]", config)
-        self.assertIn(f"credential-process {REMOTE}", config)
+        config = storage_key.aws_config(REMOTE, Path("/tmp/fdl_build_0123.x/first.json"))
+        self.assertIn(f"[profile {storage_key.PROFILE}]", config)
+        self.assertIn(f"credential-process {REMOTE} /tmp/fdl_build_0123.x/first.json", config)
+
+    def test_the_first_key_is_handed_over_once(self):
+        with tempfile.TemporaryDirectory() as folder:
+            first = Path(folder) / "first.json"
+            first.write_text('{"AccessKeyId": "first"}')
+            out = io.StringIO()
+            with mock.patch.object(storage_key, "request", side_effect=AssertionError), \
+                    contextlib.redirect_stdout(out):
+                self.assertEqual(storage_key.credential_process(REMOTE, first), 0)
+            self.assertEqual(json.loads(out.getvalue()), {"AccessKeyId": "first"})
+            self.assertFalse(first.exists())
+            out = io.StringIO()
+            with mock.patch.dict("os.environ", {"FDL_TOKEN": "t"}, clear=True), \
+                    mock.patch.object(storage_key, "request", return_value=ANSWER), \
+                    contextlib.redirect_stdout(out):
+                self.assertEqual(storage_key.credential_process(REMOTE, first), 0)
+            self.assertEqual(json.loads(out.getvalue())["AccessKeyId"], "id")
+
+    def test_a_429_waits_for_the_time_queria_names(self):
+        busy = urllib.error.HTTPError(REMOTE, 429, "Too Many Requests", {"Retry-After": "7"}, None)
+        out = io.StringIO()
+        with mock.patch.dict("os.environ", {"FDL_TOKEN": "t"}, clear=True), \
+                mock.patch.object(storage_key, "request", side_effect=[busy, ANSWER]), \
+                mock.patch.object(storage_key.time, "sleep") as sleep, \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(storage_key.credential_process(REMOTE), 0)
+        sleep.assert_called_once_with(7)
+        self.assertEqual(json.loads(out.getvalue())["AccessKeyId"], "id")
+
+    def test_other_refusals_do_not_wait(self):
+        refused = urllib.error.HTTPError(REMOTE, 402, "Payment Required", {}, None)
+        with mock.patch.dict("os.environ", {"FDL_TOKEN": "t"}, clear=True), \
+                mock.patch.object(storage_key, "request", side_effect=refused), \
+                mock.patch.object(storage_key.time, "sleep") as sleep, \
+                contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(storage_key.credential_process(REMOTE), 1)
+        sleep.assert_not_called()
 
     def test_drop_touches_only_the_builds_own_secret(self):
         with mock.patch.dict("os.environ", {}, clear=True):
