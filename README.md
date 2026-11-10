@@ -48,6 +48,7 @@ sed 's/DATASET_NAME/<name>/g' shared/templates/profiles.yml > profiles.yml
 ## 提供スクリプト
 
 - `scripts/build-dataset.sh`: `queria sync`（pull → ビルド → push）を回す
+- `scripts/build-fdl.sh`: `fdl checkout` → ビルド → `fdl commit` を回す。ビルドが dbt の `target/manifest.json` を書いたときは、モデルの SQL と依存先（`sql`・`depends_on`）を記述に追加してから commit する（`scripts/dbt_lineage.py`）。記述に書いた値が優先される。依存先は同じデータセットのテーブルだけで、ソースは入らない
 
 ## 取得の共通部品
 

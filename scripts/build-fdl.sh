@@ -58,7 +58,16 @@ export FDL_DATA_PATH
 QUERIA_USER_AGENT="${QUERIA_USER_AGENT:-queria-build/fdl-$(uv run python -c 'import importlib.metadata as m; print(m.version("fdl-cli"))')}"
 export QUERIA_USER_AGENT
 
+touch .fdl/build-started
 uv run "$@"
 
+# dbt で作ったときは、モデルの SQL と依存先を記述に書き足してから渡す (scripts/dbt_lineage.py)。
+# 今回のビルドが書いた manifest だけを使う。前に手元で回した dbt の target/ は読まない
+describe=()
+if [ target/manifest.json -nt .fdl/build-started ]; then
+    described="$(uv run python "$(dirname "$0")/dbt_lineage.py" "$work" target/manifest.json .fdl/describe)"
+    describe=(--dataset "$described")
+fi
+
 author="${FDL_AUTHOR:-$(git config user.name || echo build)}"
-uv run fdl commit "$work" -m "${FDL_MESSAGE:-build}" --author "$author" ${FDL_ASSETS:+--assets "$FDL_ASSETS"}
+uv run fdl commit "$work" -m "${FDL_MESSAGE:-build}" --author "$author" ${describe[@]+"${describe[@]}"} ${FDL_ASSETS:+--assets "$FDL_ASSETS"}
