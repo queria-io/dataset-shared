@@ -10,11 +10,13 @@
 #
 # The build reads and writes the working catalog fdl checks out: FDL_WORKING is
 # its path and FDL_DATA_PATH the folder new data files go to (profiles.yml
-# attaches both). fdl commit freezes it into a version described by dataset.yml,
-# uploads the new files and moves main; Queria publishes it.
+# attaches both). fdl commit freezes it into a version described by dataset.yml;
+# fdl push uploads the new files and moves main; Queria publishes it. An fdl
+# without push still does both in commit.
 #
 # Environment:
-#   FDL_TOKEN    a Queria API token that may write the dataset (or `queria login`, which lets fdl ask queria for it)
+#   FDL_TOKEN    a Queria API token that may write the dataset (or `queria login`, which lets fdl ask queria for it).
+#                Not used in a GitHub Actions job with `id-token: write` (see below)
 #   FDL_REMOTE   the repository (default: https://data.queria.io/datasets/queria/<name>/)
 #   FDL_MESSAGE  the version's message (default: build)
 #   FDL_AUTHOR   who made it (default: git's user.name)
@@ -35,6 +37,17 @@ if [ -z "$name" ]; then
 fi
 remote="${FDL_REMOTE:-https://data.queria.io/datasets/queria/$name/}"
 work=".fdl/work.sqlite"
+
+# In a GitHub Actions job that may ask for an OIDC token (`permissions: id-token:
+# write`), fdl and the storage key take an hour's token from Queria whenever they
+# need one (scripts/queria_token.py), so FDL_TOKEN is not used. If Queria does not
+# exchange, the helper answers with QUERIA_TOKEN.
+if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+    export FDL_CONFIG="${RUNNER_TEMP:-$(mktemp -d)}/fdl-config.toml"
+    helper="$(command -v python3) $(cd "$(dirname "$0")" && pwd)/queria_token.py"
+    printf '[credential."%s"]\nhelper = "%s"\n' "$remote" "$helper" >"$FDL_CONFIG"
+    unset FDL_TOKEN
+fi
 
 # New data files go straight to the dataset's storage when Queria gives a key to
 # its data/ (write and read, no delete): nothing stays on this machine, so a small
@@ -100,3 +113,6 @@ fi
 
 author="${FDL_AUTHOR:-$(git config user.name || echo build)}"
 uv run fdl commit "$work" -m "${FDL_MESSAGE:-build}" --author "$author" ${describe[@]+"${describe[@]}"} ${FDL_ASSETS:+--assets "$FDL_ASSETS"}
+if uv run fdl push --help >/dev/null 2>&1; then
+    uv run fdl push "$work"
+fi
