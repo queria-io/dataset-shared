@@ -27,9 +27,9 @@ scripts/build.sh
 
 ## データファイルの書き込み先（fdl のデータセット）
 
-`scripts/build-fdl.sh` は、`FDL_TOKEN` があれば Queria にデータセットの `data/` だけに書ける鍵（削除はできない）を頼みます（`scripts/storage_key.py`）。鍵が出れば `fdl checkout --storage` で、ビルドは新しいデータファイルを R2 に直接書きます。手元にファイルを置かないので、ディスクの小さいマシンでも大きいデータセットを作れます。鍵の有効期限は数分です。DuckDB の永続 secret を `PROVIDER credential_chain`（`REFRESH auto`）で作るので、期限が切れてストレージに断られると、DuckDB が `storage_key.py credential-process` で新しい鍵を取り直して続けます。鍵の値は環境変数にもログにも出ません。secret と AWS の設定ファイルは、ビルドが終わると消します。
+`scripts/build-fdl.sh` は、Queria のトークン（下の「Queria のトークン」）があれば Queria にデータセットの `data/` だけに書ける鍵（削除はできない）を頼みます（`scripts/storage_key.py`）。鍵が出れば `fdl checkout --storage` で、ビルドは新しいデータファイルを R2 に直接書きます。手元にファイルを置かないので、ディスクの小さいマシンでも大きいデータセットを作れます。鍵の有効期限は数分です。DuckDB の永続 secret を `PROVIDER credential_chain`（`REFRESH auto`）で作るので、期限が切れてストレージに断られると、DuckDB が `storage_key.py credential-process` で新しい鍵を取り直して続けます。鍵の値は環境変数にもログにも出ません。secret と AWS の設定ファイルは、ビルドが終わると消します。
 
-鍵が出ないとき（`FDL_TOKEN` が無い、Queria が断った、fdl が古い）や `FDL_DIRECT=0` のときは、これまでどおり手元のフォルダに書いてコミットでアップロードします。
+鍵が出ないとき（トークンが無い、Queria が断った、fdl が古い）や `FDL_DIRECT=0` のときは、これまでどおり手元のフォルダに書いてコミットでアップロードします。
 
 ## 提供マクロ
 
@@ -89,6 +89,24 @@ git -C shared checkout origin/main
 git add shared
 git commit -m "chore: dataset-shared を更新する"
 ```
+
+## Queria のトークン（fdl のデータセット）
+
+GitHub Actions のジョブに `id-token: write` があると、`scripts/build-fdl.sh` はリポジトリのシークレットを使わず、ジョブの OIDC トークンを Queria で 1 時間の API トークンに交換して書きます（`scripts/queria_token.py`）。fdl は credential helper として、`storage_key.py` は鍵を頼む前に、トークンが要るたびにこれを呼びます。残りが 10 分を切ると交換し直すので、1 時間を超えるビルドも止まりません。交換できるのは Queria に登録したリポジトリ・ワークフロー・ブランチ（dataset-shared の main の Sync）だけです。
+
+呼び出し側の Sync に `permissions` を書きます。書かないジョブと、Queria が交換を断ったときは、これまでどおり `QUERIA_TOKEN` で書きます。
+
+```yaml
+jobs:
+  sync:
+    permissions:
+      contents: read
+      id-token: write
+    uses: queria-io/dataset-shared/.github/workflows/sync.yml@main
+    secrets: inherit
+```
+
+手元で流すときは `FDL_TOKEN` か `queria login` を使います。
 
 ## 共通ワークフロー
 

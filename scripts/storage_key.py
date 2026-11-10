@@ -28,7 +28,7 @@ ends, however it ends. Every secret names the same profile, so whichever secret 
 a dataset DuckDB picks (another build's, or one a killed build left behind), it
 takes its next key through this build's config.
 
-Exit codes of `issue`: 0 printed the exports; 1 no key (no FDL_TOKEN, a remote
+Exit codes of `issue`: 0 printed the exports; 1 no key (no token, a remote
 outside Queria, or Queria refused): build through a local folder as before.
 """
 
@@ -46,6 +46,8 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+import queria_token
 
 #: The prefix of the persistent secret and folder each build makes.
 SECRET = "fdl_build"
@@ -137,7 +139,7 @@ def aws_config(remote: str, first: Path) -> str:
 
 
 def _ask(remote: str) -> dict | None:
-    token = os.environ.get("FDL_TOKEN")
+    token = queria_token.token()
     url = api_url(remote)
     if not token or not url:
         return None
@@ -185,7 +187,7 @@ def credential_process(remote: str, first: Path | None = None) -> int:
             time.sleep(wait)
             answer = _ask(remote)
         if answer is None:
-            print("storage key: needs FDL_TOKEN and a Queria remote", file=sys.stderr)
+            print("storage key: needs a token and a Queria remote", file=sys.stderr)
             return 1
         print(json.dumps(key_of(answer)))
     except (urllib.error.URLError, OSError, KeyError, ValueError) as exc:
