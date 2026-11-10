@@ -19,7 +19,6 @@
 #   FDL_ASSETS   a folder with the files the asset columns point at (fdl commit --assets)
 #   FDL_DIRECT   0 to keep new data files in a local folder until the commit, even when
 #                Queria gives a key to write them straight to storage (default: 1)
-#   FDL_KEY_TTL  how long that key lasts, in seconds (default and at most: 12 hours)
 #   QUERIA_USER_AGENT  the name the build reads data.queria.io under (default: queria-build/fdl-<version>)
 set -euo pipefail
 
@@ -37,8 +36,9 @@ work=".fdl/work.sqlite"
 
 # New data files go straight to the dataset's storage when Queria gives a key to
 # its data/ (write and read, no delete): nothing stays on this machine, so a small
-# disk can build a large dataset. Without one, checkout keeps them in a local folder
-# that the commit uploads.
+# disk can build a large dataset. The key lasts minutes; DuckDB takes a new one
+# whenever storage refuses the old (scripts/storage_key.py). Without one, checkout
+# keeps new files in a local folder that the commit uploads.
 storage=()
 # (An fdl older than checkout --storage keeps the local folder.)
 if [ "${FDL_DIRECT:-1}" != 0 ] && uv run fdl checkout --help 2>/dev/null | grep -- --storage >/dev/null \

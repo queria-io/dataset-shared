@@ -27,7 +27,7 @@ scripts/build.sh
 
 ## データファイルの書き込み先（fdl のデータセット）
 
-`scripts/build-fdl.sh` は、`FDL_TOKEN` があれば Queria にデータセットの `data/` だけに書ける鍵（削除はできない、最長 12 時間）を頼みます（`scripts/storage_key.py`）。鍵が出れば `fdl checkout --storage` で、ビルドは新しいデータファイルを R2 に直接書きます。手元にファイルを置かないので、ディスクの小さいマシンでも大きいデータセットを作れます。鍵は DuckDB の永続 secret として置き、ビルドが終わると消します。GitHub Actions ではログに出ないよう `::add-mask::` を出します。
+`scripts/build-fdl.sh` は、`FDL_TOKEN` があれば Queria にデータセットの `data/` だけに書ける鍵（削除はできない）を頼みます（`scripts/storage_key.py`）。鍵が出れば `fdl checkout --storage` で、ビルドは新しいデータファイルを R2 に直接書きます。手元にファイルを置かないので、ディスクの小さいマシンでも大きいデータセットを作れます。鍵の有効期限は数分です。DuckDB の永続 secret を `PROVIDER credential_chain`（`REFRESH auto`）で作るので、期限が切れてストレージに断られると、DuckDB が `storage_key.py credential-process` で新しい鍵を取り直して続けます。鍵の値は環境変数にもログにも出ません。secret と AWS の設定ファイルは、ビルドが終わると消します。
 
 鍵が出ないとき（`FDL_TOKEN` が無い、Queria が断った、fdl が古い）や `FDL_DIRECT=0` のときは、これまでどおり手元のフォルダに書いてコミットでアップロードします。
 
