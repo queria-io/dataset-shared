@@ -60,6 +60,8 @@ export FDL_DATA_PATH
 QUERIA_USER_AGENT="${QUERIA_USER_AGENT:-queria-build/fdl-$(uv run python -c 'import importlib.metadata as m; print(m.version("fdl-cli"))')}"
 export QUERIA_USER_AGENT
 
+# 前に手元で回した dbt の manifest を読まないように、ビルドの前に消す
+rm -f target/manifest.json
 uv run "$@"
 
 # Queria's checks before the version is made: the values Queria reads (licenses,
@@ -69,5 +71,13 @@ uv run "$@"
 # from before fdl datasets were understood refuses every annotations key.
 uvx queria@latest validate --quiet
 
+# dbt で作ったときは、モデルの SQL と、他のデータセットのエイリアス (profiles.yml の attach) を
+# 記述に書き足してから渡す。依存先は fdl commit が SQL から作る (scripts/dbt_lineage.py)。
+describe=()
+if [ -f target/manifest.json ]; then
+    described="$(uv run python "$(dirname "$0")/dbt_lineage.py" "$work" target/manifest.json "${DBT_PROFILES_DIR:-.}/profiles.yml" .fdl/describe)"
+    describe=(--dataset "$described")
+fi
+
 author="${FDL_AUTHOR:-$(git config user.name || echo build)}"
-uv run fdl commit "$work" -m "${FDL_MESSAGE:-build}" --author "$author" ${FDL_ASSETS:+--assets "$FDL_ASSETS"}
+uv run fdl commit "$work" -m "${FDL_MESSAGE:-build}" --author "$author" ${describe[@]+"${describe[@]}"} ${FDL_ASSETS:+--assets "$FDL_ASSETS"}
