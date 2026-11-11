@@ -21,10 +21,6 @@ scripts/build.sh
 （fdl の `local` ターゲットに相当するものは無い。書き込みは Queria が発行する
 一時認証情報を必ず経由する）。
 
-## dbt の認証情報
-
-`scripts/build-dataset.sh` は dbt を回す前に、データセットの `profiles.yml` を一時ディレクトリへ写して `queria.dbt_plugin` を足し、`DBT_PROFILES_DIR` をそこへ向ける。DuckDB はプロファイルの S3 secret を作るときにしか認証情報を取らないので、15 分を超える dbt の実行はこのプラグインが取り直す。リポジトリの `profiles.yml` は書き換えない。入っている queria にこのモジュールが無いとき、または `DBT_PROFILES_DIR` を自分で指定しているときは何もしない（`scripts/with_dbt_plugin.py`）。
-
 ## データファイルの書き込み先（fdl のデータセット）
 
 `scripts/build-fdl.sh` は、Queria のトークン（下の「Queria のトークン」）があれば Queria にデータセットの `data/` だけに書ける鍵（削除はできない）を頼みます（`scripts/storage_key.py`）。鍵が出れば `fdl checkout --storage` で、ビルドは新しいデータファイルを R2 に直接書きます。手元にファイルを置かないので、ディスクの小さいマシンでも大きいデータセットを作れます。鍵の有効期限は数分です。DuckDB の永続 secret を `PROVIDER credential_chain`（`REFRESH auto`）で作るので、期限が切れてストレージに断られると、DuckDB が `storage_key.py credential-process` で新しい鍵を取り直して続けます。鍵の値は環境変数にもログにも出ません。secret と AWS の設定ファイルは、ビルドが終わると消します。
@@ -45,7 +41,7 @@ macro-paths: ["macros", "shared/macros"]
 
 ## 雛形
 
-- `templates/profiles.yml`: 新しいデータセットの dbt プロファイル。DuckLake カタログの ATTACH（`DATA_INLINING_ROW_LIMIT 0` つき）、`credential_chain` の S3 シークレット、`QUERIA_USER_AGENT` の受け渡しまで入っている。既存のリポジトリを写すと古い形が混ざるので、ここから作る
+- `templates/profiles.yml`: 新しいデータセットの dbt プロファイル。`fdl checkout` が作る作業カタログ（`FDL_WORKING`）の ATTACH と書き込み先（`FDL_DATA_PATH`、`DATA_INLINING_ROW_LIMIT 0` つき）、`QUERIA_USER_AGENT` の受け渡しまで入っている。既存のリポジトリを写すと古い形が混ざるので、ここから作る
 
 ```bash
 sed 's/DATASET_NAME/<name>/g' shared/templates/profiles.yml > profiles.yml
@@ -53,7 +49,6 @@ sed 's/DATASET_NAME/<name>/g' shared/templates/profiles.yml > profiles.yml
 
 ## 提供スクリプト
 
-- `scripts/build-dataset.sh`: `queria sync`（pull → ビルド → push）を回す
 - `scripts/build-fdl.sh`: `fdl checkout` → ビルド → `fdl commit` を回す。ビルドが dbt の `target/manifest.json` を書いたときは、モデルの SQL（`sql`）と、profiles.yml が読むだけで ATTACH する公開データセットのエイリアス（`catalogs`）を記述に追加してから commit する（`scripts/dbt_lineage.py`）。依存先（`depends_on`）は fdl commit が SQL から作る。記述に書いた値が優先される
 
 ## 取得の共通部品
@@ -116,8 +111,8 @@ Queria の照合は、SHA で固定したワークフローもパスが登録と
 
 ## 共通ワークフロー
 
-`.github/workflows/sync.yml` と `.github/workflows/checkpoint.yml` を各データセットリポが
-`uses: queria-io/dataset-shared/.github/workflows/<name>@<SHA>` で呼ぶ。SHA は submodule と同じコミットで、
+`.github/workflows/sync.yml` を各データセットリポが
+`uses: queria-io/dataset-shared/.github/workflows/sync.yml@<SHA>` で呼ぶ。SHA は submodule と同じコミットで、
 `shared/scripts/pin-shared.sh` が両方を上げる。
 
 Sync を打ち切るまでの分数は `timeout_minutes` で決まる。既定は 90 分で、数えるのは
