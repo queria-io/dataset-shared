@@ -88,9 +88,11 @@ shared/scripts/pin-shared.sh
 git commit -m "chore: dataset-shared を更新する"
 ```
 
+`shared` が `pin-shared.sh` を含まない古いコミットを指しているリポでは、初回だけ `git -C shared fetch origin && git -C shared checkout origin/main` で submodule を先に更新してから実行する。
+
 ## Queria のトークン（fdl のデータセット）
 
-GitHub Actions のジョブに `id-token: write` があると、`scripts/build-fdl.sh` はリポジトリのシークレットを使わず、ジョブの OIDC トークンを Queria で 1 時間の API トークンに交換して書きます（`scripts/queria_token.py`）。fdl は credential helper として、`storage_key.py` は鍵を頼む前に、トークンが要るたびにこれを呼びます。残りが 10 分を切ると交換し直すので、1 時間を超えるビルドも止まりません。交換できるのは Queria に登録したリポジトリ・ワークフロー・ブランチ（dataset-shared の main の Sync）だけです。
+GitHub Actions のジョブに `id-token: write` があると、`scripts/build-fdl.sh` はリポジトリのシークレットを使わず、ジョブの OIDC トークンを Queria で 1 時間の API トークンに交換して書きます（`scripts/queria_token.py`）。fdl は credential helper として、`storage_key.py` は鍵を頼む前に、トークンが要るたびにこれを呼びます。残りが 10 分を切ると交換し直すので、1 時間を超えるビルドも止まりません。交換できるのは Queria に登録したリポジトリ・ワークフロー・ブランチ（dataset-shared の Sync を呼ぶ、各リポの main のジョブ）だけです。ワークフローを SHA で固定した呼び出しも、パスが同じなら交換できます。どの SHA を動かすかは各リポの main が決めるので、固定を上げる PR では dataset-shared の差分を確認します。
 
 呼び出し側の Sync に `permissions` を書きます。書かないジョブと、Queria が交換を断ったときは、これまでどおり `QUERIA_TOKEN` で書きます。
 
@@ -108,7 +110,7 @@ jobs:
 
 Queria の照合は、SHA で固定したワークフローもパスが登録と同じなら通す。
 
-`secrets: inherit` は使わない。inherit はリポジトリのシークレットを全部渡すので、使うものだけを明示的に渡す。取得元の API キー（`ESTAT_API_KEY`・`REINFOLIB_API_KEY`・`EDINET_API_KEY`）は、使うデータセットだけが足す。
+`secrets: inherit` は使わない。inherit はリポジトリのシークレットを全部渡すので、使うものだけを明示的に渡す。取得元の API キー（`ESTAT_API_KEY`・`REINFOLIB_API_KEY`・`EDINET_API_KEY`）は、使うデータセットだけが追加する。
 
 手元で流すときは `FDL_TOKEN` か `queria login` を使います。
 

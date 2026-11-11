@@ -6,12 +6,13 @@
 #   shared/scripts/pin-shared.sh            # main
 #   shared/scripts/pin-shared.sh <commit>   # a given commit
 set -euo pipefail
-git -C shared fetch -q origin main
+# Fetch every branch so that a commit outside main (or a short SHA) can be given
+git -C shared fetch -q origin
 git -C shared checkout -q "${1:-origin/main}"
 sha="$(git -C shared rev-parse HEAD)"
 for file in .github/workflows/*.yml .github/workflows/*.yaml; do
     [ -f "$file" ] || continue
-    perl -pi -e "s{(queria-io/dataset-shared/\.github/workflows/[\w.-]+\.ya?ml)\@\S+}{\$1\@$sha}g" "$file"
+    perl -pi -e "s{(queria-io/dataset-shared/\.github/workflows/[\w.-]+\.ya?ml)\@[^\s\"']+}{\$1\@$sha}g" "$file"
 done
 git add shared .github/workflows
 echo "shared and its workflows -> $sha"
