@@ -10,39 +10,26 @@ DATASET_NAME:
       extensions:
         - httpfs
         - ducklake
-        # credential_chain はこの拡張にある
-        - aws
         # 地理空間の型を使わないデータセットでは外す。excel など、読み込みに要る拡張はここに足す
         - spatial
-      # 認証情報を値として持たず、取り方 (process が実行する queria) だけを渡す。
-      # 鍵はどこにも置かない。ただし DuckDB はこの secret を作るときにしか
-      # process を呼ばず、refresh: auto でも期限 (15 分) が来ても取り直さない。
-      # 15 分を超える dbt の実行は、scripts/build-dataset.sh がビルドの前に足す
-      # queria.dbt_plugin が、モデルやテストを流すたびに取り直す
-      secrets:
-        - type: s3
-          provider: credential_chain
-          chain: process
-          refresh: auto
-          endpoint: "{{ env_var('QUERIA_S3_ENDPOINT_HOST', '') }}"
-          url_style: path
-          region: "{{ env_var('QUERIA_S3_REGION', 'auto') }}"
-          use_ssl: "{{ env_var('QUERIA_S3_USE_SSL', 'true') }}"
-      # ビルドが公開ストレージを読むときの名乗り。queria run が
+      # ビルドが公開ストレージを読むときの名乗り。shared/scripts/build-fdl.sh が
       # queria-build として渡す。無いと data.queria.io の利用統計に
       # 自分のビルドが利用者として混ざる。
       # settings: ではなく config_options: — custom_user_agent は接続を開く
       # ときにしか決められず、SET では変えられない
       config_options:
         custom_user_agent: "{{ env_var('QUERIA_USER_AGENT', '') }}"
+      # fdl checkout が作った作業場のカタログ (SQLite) に書く。新しいデータファイルは
+      # FDL_DATA_PATH (data.queria.io から取り出したときは手元のフォルダ) に書き、
+      # fdl commit が上げる (shared/scripts/build-fdl.sh)
       attach:
-        - path: "ducklake:{{ env_var('QUERIA_CATALOG_PATH', '') }}"
+        - path: "ducklake:{{ env_var('FDL_WORKING') }}"
           alias: DATASET_NAME
           is_ducklake: true
           options:
-            DATA_PATH: "{{ env_var('QUERIA_DATA_URL', '') }}"
+            DATA_PATH: "{{ env_var('FDL_DATA_PATH') }}"
             OVERRIDE_DATA_PATH: true
             META_TYPE: "'sqlite'"
             # 既定のままだと小さいテーブルがカタログの中に収まり parquet が
-            # 1 つも生成されない。データファイルの無いデータセットが公開されるので、常に切る
+            # 1 つも生成されない。fdl commit はインライン化された行を断るので、常に切る
             DATA_INLINING_ROW_LIMIT: 0
