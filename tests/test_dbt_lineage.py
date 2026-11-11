@@ -126,6 +126,31 @@ class WithLineageTest(unittest.TestCase):
         self.assertEqual(out["catalogs"], ["e_stat"])
 
 
+class UnlistedTest(unittest.TestCase):
+    def test_hides_tables_without_a_description(self):
+        declared = {
+            "name": "geo",
+            "tables": [
+                {"schema": "main", "name": "mart", "title": "Mart", "sql": "select 1"},
+                {"schema": "main", "name": "raw", "sql": "select 2"},
+            ],
+        }
+        live = {("main", "mart"), ("main", "raw"), ("_source", "loaded")}
+        out = dbt_lineage.unlisted(declared, live)
+        hidden = {
+            (t["schema"], t["name"])
+            for t in out["tables"]
+            if t.get("annotations") == {"queria": {"published": False}}
+        }
+        self.assertEqual(hidden, {("main", "raw"), ("_source", "loaded")})
+        self.assertEqual(out["tables"][0], declared["tables"][0])
+
+    def test_keeps_a_table_the_writer_described(self):
+        declared = {"name": "geo", "tables": [{"schema": "main", "name": "t", "description": "d"}]}
+        out = dbt_lineage.unlisted(declared, {("main", "t")})
+        self.assertEqual(out["tables"], declared["tables"])
+
+
 class LiveRelationsTest(unittest.TestCase):
     def test_reads_live_tables_and_views(self):
         with tempfile.TemporaryDirectory() as tmp:

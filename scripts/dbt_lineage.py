@@ -1,6 +1,6 @@
 """dbt が作ったテーブルの SQL と、他のデータセットのエイリアスを、fdl commit に渡す記述に書き足す。
 
-使い方: python dbt_lineage.py <作業場のカタログ> <manifest.json> <profiles.yml> <出力先のフォルダ>
+使い方: python dbt_lineage.py <作業場のカタログ> <manifest.json か -> <profiles.yml> <出力先のフォルダ>
 
 fdl commit は SQL を持つテーブルの depends_on を、その SQL から作る。dbt で作ったテーブルの
 SQL (compiled_code) はカタログに残らないので、ここで manifest から `sql` を書き足す。
@@ -13,6 +13,11 @@ fdl commit は記述のあるフォルダから *.table.yml と README.md・docs
 元のフォルダの記述を渡すと表が 2 度記述されたことになる。
 
 SQL を足すのは作業場のカタログにあるテーブルとビューだけ。
+
+FDL_UNDESCRIBED=unlisted のときは、記述 (*.table.yml) の無いテーブルとビューを Queria に
+掲載しない (`annotations.queria.published: false` を足す)。取り込んだままの元表や中間テーブルが
+数百あるデータセット向けで、データセットの scripts/build.sh が指定する。dbt を流さないビルドでも
+足せるように、manifest の代わりに `-` を受け取る。
 """
 
 from __future__ import annotations
@@ -150,6 +155,25 @@ def with_lineage(
     }
 
 
+def unlisted(declared: dict[str, Any], live: set[Key]) -> dict[str, Any]:
+    """記述に無いテーブルとビューを、Queria に掲載しないものとして足す。書き手の値が勝つ。"""
+    tables = declared.get("tables") or []
+    written = {
+        (t.get("schema"), t.get("name"))
+        for t in tables
+        if isinstance(t, dict) and set(t) - {"schema", "name", "sql"}
+    }
+
+    def hide(table: Any) -> Any:
+        if not isinstance(table, dict) or (table.get("schema"), table.get("name")) in written:
+            return table
+        return {**table, "annotations": {"queria": {"published": False}}}
+
+    present = {(t.get("schema"), t.get("name")) for t in tables if isinstance(t, dict)}
+    added = [{"schema": schema, "name": name} for schema, name in sorted(live - present)]
+    return {**declared, "tables": [*map(hide, tables), *map(hide, added)]}
+
+
 def stage(declared: dict[str, Any], root: Path, out: Path) -> Path:
     """fdl commit に渡す記述を ``out`` に書く。README.md と docs/ は ``root`` のものを指す。"""
     from fdl import dataset
@@ -172,17 +196,18 @@ def main(argv: list[str]) -> int:
     from fdl import dataset  # fdl-cli はデータセットの依存に入っている
 
     description = dataset.find()
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest = (
+        {} if str(manifest_path) == "-" else json.loads(manifest_path.read_text(encoding="utf-8"))
+    )
     profiles = (
         yaml.safe_load(profiles_path.read_text(encoding="utf-8")) if profiles_path.is_file() else {}
     )
     # catalogs を知らない fdl (0.21 まで) は、知らないキーとして記述ごと断る
     aliases = catalogs(profiles or {}) if "catalogs" in dataset.DATASET_KEYS else {}
-    declared = with_lineage(
-        dataset.gather(description),
-        compiled_sql(manifest, live_relations(working)),
-        aliases,
-    )
+    live = live_relations(working)
+    declared = with_lineage(dataset.gather(description), compiled_sql(manifest, live), aliases)
+    if os.environ.get("FDL_UNDESCRIBED") == "unlisted":
+        declared = unlisted(declared, live)
     print(stage(declared, description.resolve().parent, out))
     return 0
 
