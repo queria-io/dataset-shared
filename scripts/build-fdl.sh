@@ -21,6 +21,7 @@
 #   FDL_MESSAGE  the version's message (default: build)
 #   FDL_AUTHOR   who made it (default: git's user.name)
 #   FDL_ASSETS   a folder with the files the asset columns point at (fdl commit --assets)
+#   FDL_UNDESCRIBED  unlisted: tables with no description (*.table.yml) are not listed on Queria
 #   FDL_DIRECT   0 to keep new data files in a local folder until the commit, even when
 #                Queria gives a key to write them straight to storage (default: 1)
 #   QUERIA_USER_AGENT  the name the build reads data.queria.io under (default: queria-build/fdl-<version>)
@@ -105,9 +106,12 @@ uvx queria@latest validate --quiet
 
 # dbt で作ったときは、モデルの SQL と、他のデータセットのエイリアス (profiles.yml の attach) を
 # 記述に書き足してから渡す。依存先は fdl commit が SQL から作る (scripts/dbt_lineage.py)。
+# FDL_UNDESCRIBED=unlisted なら、記述の無いテーブルを Queria に掲載しないものとして足す。
 describe=()
-if [ -f target/manifest.json ]; then
-    described="$(uv run python "$(dirname "$0")/dbt_lineage.py" "$work" target/manifest.json "${DBT_PROFILES_DIR:-.}/profiles.yml" .fdl/describe)"
+manifest=-
+[ -f target/manifest.json ] && manifest=target/manifest.json
+if [ "$manifest" != - ] || [ "${FDL_UNDESCRIBED:-}" = unlisted ]; then
+    described="$(uv run python "$(dirname "$0")/dbt_lineage.py" "$work" "$manifest" "${DBT_PROFILES_DIR:-.}/profiles.yml" .fdl/describe)"
     describe=(--dataset "$described")
 fi
 
