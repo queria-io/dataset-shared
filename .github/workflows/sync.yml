@@ -44,13 +44,22 @@ on:
       # 呼び出し側と同じ organization / enterprise の reusable workflow を呼ぶときだけ。
       # 個人アカウントのリポジトリからこの workflow を呼ぶと、inherit を書いても
       # secrets は空で渡り、queria が「トークンが無い」として落ちる。
-      # 明示的に渡せるように宣言する。org のリポジトリは inherit のままでよい
-      # (inherit は宣言の有無にかかわらず全部渡す)。
+      # 明示的に渡せるように宣言する。org のリポジトリも inherit は使わず、使うものだけを渡す
+      # (inherit は宣言の有無にかかわらず、そのリポジトリのシークレットを全部渡す)。
       QUERIA_TOKEN:
         description: 書き込み先のアカウントを決めるトークン
         required: false
       DISCORD_WEBHOOK_URL:
         description: 失敗の通知先。空なら通知しない
+        required: false
+      ESTAT_API_KEY:
+        description: e-Stat API のアプリケーション ID
+        required: false
+      REINFOLIB_API_KEY:
+        description: 不動産情報ライブラリ API のキー
+        required: false
+      EDINET_API_KEY:
+        description: EDINET API のキー
         required: false
 
 jobs:

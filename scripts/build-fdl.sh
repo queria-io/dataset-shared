@@ -67,14 +67,13 @@ if [ "${FDL_DIRECT:-1}" != 0 ] \
     storage=(--storage "$FDL_STORAGE")
 fi
 
-# Every build starts from what is published now, so a version is built on main.
-rm -rf .fdl
-uv run fdl checkout "$remote" "$work" ${storage[@]+"${storage[@]}"}
-export FDL_WORKING="$PWD/$work"
 # Where the build writes new data files. Over HTTP checkout keeps them in a local
-# folder (recorded beside the working catalog) until commit uploads them;
-# otherwise they go where the catalog says.
-FDL_DATA_PATH="$(uv run python - "$work" <<'PY'
+# folder (recorded beside the working catalog) until commit uploads them; with
+# --storage they go to the repository's data_dir in its storage; otherwise they go
+# where the catalog says. The catalog's own data_path is where readers find the
+# files (https://...), which DuckDB cannot write to.
+data_path() {
+    uv run python - "$work" <<'PY'
 import json, sqlite3, sys
 from pathlib import Path
 
@@ -82,11 +81,34 @@ work = Path(sys.argv[1])
 state = json.loads(work.with_name(work.name + ".fdl.json").read_text())
 if "data" in state:
     print(Path(state["data"]).resolve().as_posix() + "/")
+elif "storage" in state:
+    from fdl import repo
+    from fdl.stores import open_store
+
+    print(repo.storage_data_path(state["storage"], repo.read_config(open_store(state["remote"]))))
 else:
     con = sqlite3.connect(work)
     print(con.execute("SELECT value FROM ducklake_metadata WHERE key = 'data_path'").fetchone()[0])
 PY
-)"
+}
+
+# Every build starts from what is published now, so a version is built on main.
+rm -rf .fdl
+uv run fdl checkout "$remote" "$work" ${storage[@]+"${storage[@]}"}
+FDL_DATA_PATH="$(data_path)"
+# Queria's key reaches data/ alone. A repository that keeps its data files
+# elsewhere (data_dir from before data/) builds through a local folder.
+if [ -n "${storage[*]+x}" ] && [ "$FDL_DATA_PATH" != "${FDL_STORAGE%/}/data/" ]; then
+    echo "storage key: not used (data files are in $FDL_DATA_PATH, the key reaches data/ alone); building through a local folder" >&2
+    uv run python "$(dirname "$0")/storage_key.py" drop || true
+    trap - EXIT
+    unset FDL_STORAGE FDL_STORAGE_SECRET AWS_CONFIG_FILE
+    storage=()
+    rm -rf .fdl
+    uv run fdl checkout "$remote" "$work"
+    FDL_DATA_PATH="$(data_path)"
+fi
+export FDL_WORKING="$PWD/$work"
 export FDL_DATA_PATH
 # Reads of other public datasets go by this name (profiles.yml's custom_user_agent),
 # so data.queria.io does not count the build among its users.

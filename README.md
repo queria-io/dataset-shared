@@ -81,18 +81,18 @@ with replacing(Path("data/places/place.ndjson")) as partial:
 
 ### submodule の版を上げる
 
-各データセットリポは `shared` の版を固定しているので、ここを直しても版を上げるまでは効かない（ワークフローは `@main` で呼ぶので、版と関係なく効く）。
+各データセットリポは `shared` のコミットと、呼び出すワークフロー（`uses: queria-io/dataset-shared/.github/workflows/<name>@<SHA>`）を同じ SHA に固定している。ここを直しても、各リポで固定を上げる PR をマージするまでは効かない。dataset-shared の main に誤って入った変更が、全データセットのシークレットと書き込み権を持って一度に動かないようにするため。上げる PR では dataset-shared の差分を確認する。
 
 ```bash
-git -C shared fetch origin
-git -C shared checkout origin/main
-git add shared
+shared/scripts/pin-shared.sh
 git commit -m "chore: dataset-shared を更新する"
 ```
 
+`shared` が `pin-shared.sh` を含まない古いコミットを指しているリポでは、初回だけ `git -C shared fetch origin && git -C shared checkout origin/main` で submodule を先に更新してから実行する。
+
 ## Queria のトークン（fdl のデータセット）
 
-GitHub Actions のジョブに `id-token: write` があると、`scripts/build-fdl.sh` はリポジトリのシークレットを使わず、ジョブの OIDC トークンを Queria で 1 時間の API トークンに交換して書きます（`scripts/queria_token.py`）。fdl は credential helper として、`storage_key.py` は鍵を頼む前に、トークンが要るたびにこれを呼びます。残りが 10 分を切ると交換し直すので、1 時間を超えるビルドも止まりません。交換できるのは Queria に登録したリポジトリ・ワークフロー・ブランチ（dataset-shared の main の Sync）だけです。
+GitHub Actions のジョブに `id-token: write` があると、`scripts/build-fdl.sh` はリポジトリのシークレットを使わず、ジョブの OIDC トークンを Queria で 1 時間の API トークンに交換して書きます（`scripts/queria_token.py`）。fdl は credential helper として、`storage_key.py` は鍵を頼む前に、トークンが要るたびにこれを呼びます。残りが 10 分を切ると交換し直すので、1 時間を超えるビルドも止まりません。交換できるのは Queria に登録したリポジトリ・ワークフロー・ブランチ（dataset-shared の Sync を呼ぶ、各リポの main のジョブ）だけです。ワークフローを SHA で固定した呼び出しも、パスが同じなら交換できます。どの SHA を動かすかは各リポの main が決めるので、固定を上げる PR では dataset-shared の差分を確認します。
 
 呼び出し側の Sync に `permissions` を書きます。書かないジョブと、Queria が交換を断ったときは、これまでどおり `QUERIA_TOKEN` で書きます。
 
@@ -102,17 +102,23 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: queria-io/dataset-shared/.github/workflows/sync.yml@main
-    secrets: inherit
+    uses: queria-io/dataset-shared/.github/workflows/sync.yml@<shared の SHA>
+    secrets:
+      QUERIA_TOKEN: ${{ secrets.QUERIA_TOKEN }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 ```
+
+Queria の照合は、SHA で固定したワークフローもパスが登録と同じなら通す。
+
+`secrets: inherit` は使わない。inherit はリポジトリのシークレットを全部渡すので、使うものだけを明示的に渡す。取得元の API キー（`ESTAT_API_KEY`・`REINFOLIB_API_KEY`・`EDINET_API_KEY`）は、使うデータセットだけが追加する。
 
 手元で流すときは `FDL_TOKEN` か `queria login` を使います。
 
 ## 共通ワークフロー
 
 `.github/workflows/sync.yml` と `.github/workflows/checkpoint.yml` を各データセットリポが
-`uses: queria-io/dataset-shared/.github/workflows/<name>@main` で呼ぶ。`@main` なので
-ここへのマージは全リポの次のランに効く。
+`uses: queria-io/dataset-shared/.github/workflows/<name>@<SHA>` で呼ぶ。SHA は submodule と同じコミットで、
+`shared/scripts/pin-shared.sh` が両方を上げる。
 
 Sync を打ち切るまでの分数は `timeout_minutes` で決まる。既定は 90 分で、数えるのは
 job が走り出してからの時間（`concurrency` の待ち時間は入らない）。これを超える
@@ -121,7 +127,7 @@ job が走り出してからの時間（`concurrency` の待ち時間は入ら�
 ```yaml
 jobs:
   sync:
-    uses: queria-io/dataset-shared/.github/workflows/sync.yml@main
+    uses: queria-io/dataset-shared/.github/workflows/sync.yml@<shared の SHA>
     with:
       timeout_minutes: 240
 ```
@@ -169,10 +175,11 @@ jobs:
   local-run:
     needs: check
     if: needs.check.outputs.reason != ''
-    uses: queria-io/dataset-shared/.github/workflows/local-run.yml@main
+    uses: queria-io/dataset-shared/.github/workflows/local-run.yml@<shared の SHA>
     with:
       reason: ${{ needs.check.outputs.reason }}
-    secrets: inherit
+    secrets:
+      LOCAL_RUN_ISSUE_TOKEN: ${{ secrets.LOCAL_RUN_ISSUE_TOKEN }}
 ```
 
 ## 層の切り方
