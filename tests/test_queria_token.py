@@ -47,13 +47,14 @@ class TokenTest(unittest.TestCase):
                 mock.patch.object(queria_token, "_post", return_value={"token": "qk_new", "expires_at": LATER}):
             self.assertEqual(queria_token.token(), "qk_new")
 
-    def test_falls_back_to_queria_token_when_queria_refuses(self):
+    def test_stops_when_queria_refuses_in_github_actions(self):
         refused = urllib.error.HTTPError("u", 403, "not registered", {}, None)
-        with self.env(**OIDC, QUERIA_TOKEN="old"), \
+        with self.env(**OIDC, FDL_TOKEN="mine", QUERIA_TOKEN="old"), \
                 mock.patch.object(queria_token, "_github_oidc_token", return_value="jwt"), \
                 mock.patch.object(queria_token, "_post", side_effect=refused), \
                 contextlib.redirect_stderr(io.StringIO()):
-            self.assertEqual(queria_token.token(), "old")
+            self.assertIsNone(queria_token.token())
+            self.assertEqual(queria_token.main([]), 1)
         self.assertFalse(self.kept.exists())
 
     def test_uses_fdl_token_outside_github_actions(self):

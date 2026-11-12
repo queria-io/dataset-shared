@@ -16,7 +16,7 @@ git submodule add https://github.com/queria-io/dataset-shared.git shared
 scripts/build.sh
 ```
 
-公開先は選ばない。データセットは `dataset.yml`、アカウントは `QUERIA_TOKEN` が決める。
+公開先は選ばない。データセットは `dataset.yml`、アカウントはトークンが決める（手元では `FDL_TOKEN` か `queria login`、GitHub Actions では OIDC で取るトークン）。
 公開せずに 1 回転させたいときは queria-cli の `tools/rotate.py` をスタンドインに向けて回す
 （fdl の `local` ターゲットに相当するものは無い。書き込みは Queria が発行する
 一時認証情報を必ず経由する）。
@@ -89,7 +89,7 @@ git commit -m "chore: dataset-shared を更新する"
 
 GitHub Actions のジョブに `id-token: write` があると、`scripts/build-fdl.sh` はリポジトリのシークレットを使わず、ジョブの OIDC トークンを Queria で 1 時間の API トークンに交換して書きます（`scripts/queria_token.py`）。fdl は credential helper として、`storage_key.py` は鍵を頼む前に、トークンが要るたびにこれを呼びます。残りが 10 分を切ると交換し直すので、1 時間を超えるビルドも止まりません。交換できるのは Queria に登録したリポジトリ・ワークフロー・ブランチ（dataset-shared の Sync を呼ぶ、各リポの main のジョブ）だけです。ワークフローを SHA で固定した呼び出しも、パスが同じなら交換できます。どの SHA を動かすかは各リポの main が決めるので、固定を上げる PR では dataset-shared の差分を確認します。
 
-呼び出し側の Sync に `permissions` を書きます。書かないジョブと、Queria が交換を断ったときは、これまでどおり `QUERIA_TOKEN` で書きます。
+呼び出し側の Sync に `permissions` を書きます。Queria のトークンはシークレットで渡しません。Queria が交換を断ったときは、ビルドが止まります。
 
 ```yaml
 jobs:
@@ -99,7 +99,6 @@ jobs:
       id-token: write
     uses: queria-io/dataset-shared/.github/workflows/sync.yml@<shared の SHA>
     secrets:
-      QUERIA_TOKEN: ${{ secrets.QUERIA_TOKEN }}
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 ```
 
