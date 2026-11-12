@@ -11,7 +11,8 @@ while more than ten minutes of it remain, so a build of any length asks again
 only when it needs to. Queria gives one only to the repositories, workflows and
 branches registered with it.
 
-Elsewhere, or when the exchange fails, FDL_TOKEN or QUERIA_TOKEN is used as before.
+In such a job there is no other token: when the exchange fails, the build
+stops. Elsewhere (a build on your own machine), FDL_TOKEN or QUERIA_TOKEN is used.
 
 Exit codes: 0 printed a token; 1 none.
 """
@@ -95,13 +96,14 @@ def exchanged() -> str | None:
 
 
 def token() -> str | None:
-    """The token to write with: the exchanged one, else FDL_TOKEN or QUERIA_TOKEN."""
+    """The token to write with: the exchanged one in GitHub Actions, else FDL_TOKEN or QUERIA_TOKEN."""
+    if not os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL"):
+        return os.environ.get("FDL_TOKEN") or os.environ.get("QUERIA_TOKEN") or None
     try:
-        found = exchanged()
+        return exchanged()
     except (urllib.error.URLError, OSError, KeyError, ValueError) as exc:
-        print(f"queria token: no exchange ({exc}); using QUERIA_TOKEN", file=sys.stderr)
-        found = None
-    return found or os.environ.get("FDL_TOKEN") or os.environ.get("QUERIA_TOKEN") or None
+        print(f"queria token: Queria did not exchange the OIDC token ({exc})", file=sys.stderr)
+        return None
 
 
 def main(argv: list[str]) -> int:
@@ -110,7 +112,7 @@ def main(argv: list[str]) -> int:
         return 2
     found = token()
     if not found:
-        print("queria token: none (no OIDC token, FDL_TOKEN or QUERIA_TOKEN)", file=sys.stderr)
+        print("queria token: none (no exchanged token, FDL_TOKEN or QUERIA_TOKEN)", file=sys.stderr)
         return 1
     print(f"password={found}" if argv == ["get"] else found)
     return 0

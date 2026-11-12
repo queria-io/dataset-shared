@@ -42,7 +42,7 @@ work=".fdl/work.sqlite"
 # In a GitHub Actions job that may ask for an OIDC token (`permissions: id-token:
 # write`), fdl and the storage key take an hour's token from Queria whenever they
 # need one (scripts/queria_token.py), so FDL_TOKEN is not used. If Queria does not
-# exchange, the helper answers with QUERIA_TOKEN.
+# exchange, the build stops.
 if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
     export FDL_CONFIG="${RUNNER_TEMP:-$(mktemp -d)}/fdl-config.toml"
     helper="$(command -v python3) $(cd "$(dirname "$0")" && pwd)/queria_token.py"

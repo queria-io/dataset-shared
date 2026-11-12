@@ -46,9 +46,6 @@ on:
       # secrets は空で渡り、queria が「トークンが無い」として落ちる。
       # 明示的に渡せるように宣言する。org のリポジトリも inherit は使わず、使うものだけを渡す
       # (inherit は宣言の有無にかかわらず、そのリポジトリのシークレットを全部渡す)。
-      QUERIA_TOKEN:
-        description: 書き込み先のアカウントを決めるトークン
-        required: false
       DISCORD_WEBHOOK_URL:
         description: 失敗の通知先。空なら通知しない
         required: false
@@ -89,14 +86,10 @@ jobs:
       queue: max
     env:
       PYTHONUNBUFFERED: "1"
-      # queria は誰のデータセットに書くのかをトークンから決める。R2 の鍵は渡さない
-      # (一時認証情報を queria が取り、それも値ではなく取り方だけがビルドに渡る)
-      QUERIA_TOKEN: ${{ secrets.QUERIA_TOKEN }}
-      # fdl で上げるリポ (scripts/build-fdl.sh) は同じトークンで data.queria.io に書く。
-      # 呼び出し側が `id-token: write` を渡すと、build-fdl.sh はこれを使わず OIDC で
-      # 1 時間のトークンを取る (scripts/queria_token.py)。permissions をここに書くと、
-      # 渡していない呼び出し側の run が起動時に落ちるので書かない
-      FDL_TOKEN: ${{ secrets.QUERIA_TOKEN }}
+      # Queria のトークンは渡さない。呼び出し側が `id-token: write` を渡し、
+      # scripts/build-fdl.sh が OIDC で 1 時間のトークンを取る (scripts/queria_token.py)。
+      # 交換できなければビルドは止まる。permissions をここに書くと、渡していない
+      # 呼び出し側の run が起動時に落ちるので書かない
       ESTAT_API_KEY: ${{ secrets.ESTAT_API_KEY }}
       REINFOLIB_API_KEY: ${{ secrets.REINFOLIB_API_KEY }}
       EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
