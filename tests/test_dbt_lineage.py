@@ -84,6 +84,14 @@ class CatalogsTest(unittest.TestCase):
         )
         self.assertEqual(dbt_lineage.catalogs(profiles, env={"HOUJIN_BANGOU": "ducklake:/tmp/h.duckdb"}), {})
 
+    def test_a_version_catalog_names_its_repository(self):
+        url = "ducklake:https://data.queria.io/datasets/queria/e_stat/versions/01a1cf77-4bc4-7397-842c-fd8f68af28c3/ducklake.duckdb"
+        profiles = {"p": {"outputs": {"default": {"attach": [{"path": url, "alias": "e_stat"}]}}}}
+        self.assertEqual(
+            dbt_lineage.catalogs(profiles, env={}),
+            {"e_stat": "https://data.queria.io/datasets/queria/e_stat/"},
+        )
+
     def test_only_the_target_in_use(self):
         stg = {"path": "ducklake:https://stg.example.org/e_stat/ducklake.duckdb", "alias": "e_stat"}
         profiles = {

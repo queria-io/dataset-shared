@@ -95,15 +95,20 @@ def _render(text: str, env: Mapping[str, str]) -> str | None:
     return None if unresolved or "{" in rendered else rendered
 
 
+_CATALOG_URL = re.compile(r"(https?://.+?/)(?:versions/[^/]+/)?ducklake\.duckdb")
+
+
 def _repository(path: str, env: Mapping[str, str]) -> str | None:
-    """ATTACH の path (`ducklake:https://…/ducklake.duckdb`) から、リポジトリの URL。"""
+    """ATTACH の path から、リポジトリの URL。
+
+    main のカタログ (`ducklake:https://…/ducklake.duckdb`) と、バージョンのカタログ
+    (`ducklake:https://…/versions/<ID>/ducklake.duckdb`) のどちらでもリポジトリの URL にする。
+    """
     rendered = _render(path, env)
     if rendered is None:
         return None
-    url = rendered.removeprefix("ducklake:")
-    if not url.startswith(("https://", "http://")):
-        return None
-    return url.removesuffix("ducklake.duckdb") if url.endswith("/ducklake.duckdb") else None
+    match = _CATALOG_URL.fullmatch(rendered.removeprefix("ducklake:"))
+    return match.group(1) if match else None
 
 
 def _target(profile: dict[str, Any], env: Mapping[str, str]) -> dict[str, Any] | None:
