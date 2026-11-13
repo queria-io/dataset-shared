@@ -31,6 +31,13 @@ on:
         required: false
         type: number
         default: 90
+      mode:
+        # 同じデータセットを月次は全件、日次は差分で作るリポが、日次の呼び出しで渡す。
+        # SYNC_MODE としてビルドに渡し、値の意味は各リポの main.py が決める。省略時は空
+        description: ビルドのモード (SYNC_MODE)
+        required: false
+        type: string
+        default: ""
       free_disk:
         # fdl は data.queria.io に上げる前にデータファイルを手元に書くので、ビルドが
         # 書く量だけディスクが要る。書く量がランナーの空きに近い
@@ -57,6 +64,9 @@ on:
         required: false
       EDINET_API_KEY:
         description: EDINET API のキー
+        required: false
+      GBIZINFO_API_TOKEN:
+        description: gBizINFO のアクセストークン
         required: false
 
 jobs:
@@ -93,6 +103,8 @@ jobs:
       ESTAT_API_KEY: ${{ secrets.ESTAT_API_KEY }}
       REINFOLIB_API_KEY: ${{ secrets.REINFOLIB_API_KEY }}
       EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
+      GBIZINFO_API_TOKEN: ${{ secrets.GBIZINFO_API_TOKEN }}
+      SYNC_MODE: ${{ inputs.mode }}
     steps:
       - name: Free disk space
         if: inputs.free_disk
