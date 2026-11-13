@@ -104,7 +104,7 @@ jobs:
 
 Queria の照合は、SHA で固定したワークフローもパスが登録と同じなら通す。
 
-`secrets: inherit` は使わない。inherit はリポジトリのシークレットを全部渡すので、使うものだけを明示的に渡す。取得元の API キー（`ESTAT_API_KEY`・`REINFOLIB_API_KEY`・`EDINET_API_KEY`）は、使うデータセットだけが追加する。
+`secrets: inherit` は使わない。inherit はリポジトリのシークレットを全部渡すので、使うものだけを明示的に渡す。取得元の API キー（`ESTAT_API_KEY`・`REINFOLIB_API_KEY`・`EDINET_API_KEY`・`GBIZINFO_API_TOKEN`）は、使うデータセットだけが追加する。
 
 手元で流すときは `FDL_TOKEN` か `queria login` を使います。
 
@@ -147,6 +147,17 @@ fdl で上げるデータセットは、新しいデータファイルを手元�
 1 回のビルドが書く量だけランナーのディスクが要る。
 書く量がランナーの空きに近いデータセットは `free_disk: true` を渡すと、ビルドの前に使わないツール
 （.NET・Android SDK・GHC・CodeQL）を消して空ける。前後の空きはログに出る。
+
+月次は全件、日次は差分のように、同じデータセットをモードを変えて作るリポは、日次のワークフローからも
+共通の Sync を呼び、`mode` を渡す。値は `SYNC_MODE` としてビルドに渡り、意味は各リポの `main.py` が決める。
+
+```yaml
+jobs:
+  sync:
+    uses: queria-io/dataset-shared/.github/workflows/sync.yml@<shared の SHA>
+    with:
+      mode: incremental
+```
 
 ### 手元で流す作業を Issue に残す
 
