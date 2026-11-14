@@ -141,8 +141,8 @@ author="${FDL_AUTHOR:-$(git config user.name || echo build)}"
 uv run fdl commit "$work" -m "${FDL_MESSAGE:-build}" --author "$author" ${describe[@]+"${describe[@]}"} ${FDL_ASSETS:+--assets "$FDL_ASSETS"}
 # テーブルごとの要約 (profile) を測り、push がバージョンと一緒に上げる。Queria は publish のときに
 # これを読むので、push の前に作る。fdl 0.24 までは commit が作っていた (profile コマンドが無い)。
-# 作れなくても公開は止めない
-if uv run fdl profile --help >/dev/null 2>&1; then
+# 作れなくても公開は止めない。変更が無く commit がバージョンを作らなかったとき (`<work>.pending` が無い) は流さない
+if [ -d "${work}.pending" ] && uv run fdl profile --help >/dev/null 2>&1; then
     uv run fdl profile "$work" || echo "warning: tables were not profiled" >&2
 fi
 if uv run fdl push --help >/dev/null 2>&1; then
