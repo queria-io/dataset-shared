@@ -27,6 +27,7 @@ import time
 import zipfile
 from collections import Counter, defaultdict
 from collections.abc import Iterable
+from http.client import InvalidURL
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import quote, urlsplit
@@ -112,6 +113,9 @@ def download_plans(hosts: Iterable[str], *, user_agent: str, pdf_dir: Path) -> N
                 # 5xx は再試行しても失敗したときにそのまま止める
                 if error.code >= 500:
                     raise
+                body = None
+            except InvalidURL:
+                # シートの URL に空白などが入っていて、要求を送れない
                 body = None
             if body is None:
                 logger.info("plans: 取得できない: %s", url)
