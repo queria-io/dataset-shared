@@ -88,7 +88,7 @@ pages = pdf_pages(Path("data/pdf/a.pdf").read_bytes(), cid_map)  # Page(page, la
 
 - 本文は NFKC で正規化する
 - 文字コードの対応表（ToUnicode）が無いフォントでは、PyMuPDF が文字の代わりに Adobe-Japan1 の CID を返す。ページの中でその文字の 5% 超が普段の日本語の文書に出ない文字コードになるフォントでは、U+3000 より前の文字を CID とみなし、Adobe の [Adobe-Japan1-UCS2](https://github.com/adobe-type-tools/mapping-resources-pdf)（コミット固定）で文字に戻す。戻した文字の数は `cid_repaired_chars`
-- テストは `uv run --no-project --python 3.13 --with pymupdf python -m unittest tests.test_pdf_text`
+- テストは CI の test.yml で他のテストと一緒に流す（手元では `--with pymupdf` を付ける）
 
 ### submodule の版を上げる
 
