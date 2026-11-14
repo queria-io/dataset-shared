@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 # データセットリポと同じく shared パッケージとして読む
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,7 +21,7 @@ HOSTS = {"www.mlit.go.jp"}
 
 
 def row(url: str, title: str) -> dict:
-    return {"計画通知等URL": url, "計画通知名": title}
+    return {"plan_url": url, "plan_title": title}
 
 
 class IsTargetTest(unittest.TestCase):
@@ -47,6 +48,32 @@ class YearTitlesTest(unittest.TestCase):
                 "https://www.mlit.go.jp/b.pdf": "通知",
             },
         )
+
+
+class PlanUrlsTest(unittest.TestCase):
+    def test_later_year_wins(self):
+        years = {
+            2025: [row("https://www.mlit.go.jp/a.pdf", "新しい名前")],
+            2024: [
+                row("https://www.mlit.go.jp/a.pdf", "古い名前"),
+                row("https://www.mlit.go.jp/b.pdf", "通知"),
+            ],
+        }
+        with mock.patch.object(review_plans, "review_rows", return_value=years):
+            self.assertEqual(
+                review_plans.plan_urls(HOSTS, "test"),
+                {
+                    "https://www.mlit.go.jp/a.pdf": "新しい名前",
+                    "https://www.mlit.go.jp/b.pdf": "通知",
+                },
+            )
+
+    def test_no_rows(self):
+        with (
+            mock.patch.object(review_plans, "review_rows", return_value={}),
+            self.assertRaises(SystemExit),
+        ):
+            review_plans.plan_urls(HOSTS, "test")
 
 
 if __name__ == "__main__":

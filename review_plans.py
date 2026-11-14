@@ -8,8 +8,8 @@
     download_plans(HOSTS, user_agent=USER_AGENT, pdf_dir=Path("data/plans"))
     build_plans_parquet(user_agent=USER_AGENT, pdf_dir=Path("data/plans"), parquet_dir=Path("data/parquet"))
 
-1. 行政事業レビュー見える化サイト（https://rssystem.go.jp）の CSV（1-3 政策・施策、法令等、2024 年度のシートから）
-   から、計画・通知等の URL のうち hosts のサイトの PDF を集める
+1. 行政事業レビュー見える化サイト（https://rssystem.go.jp）のシートをテーブルにした Queria の公開データセット
+   queria/rssystem の review.related_plans から、計画・通知等の URL のうち hosts のサイトの PDF を集める
 2. PDF を 1 秒に 1 回の頻度で取得して sha256 を付ける。手元では取得済みの URL を pdf_dir/index.json で覚えて取り直さない
 3. ページごとに文字を取り出し（shared/pdf_text.py）、Parquet にする
    （<parquet_dir>/plans_documents.parquet: 1 行が 1 URL、plans_pages.parquet: 1 行が 1 ページ）
@@ -17,21 +17,19 @@
 使うデータセットは pyproject.toml に pymupdf と duckdb を追加する。
 """
 
-import csv
 import datetime
 import hashlib
-import io
 import json
 import logging
+import os
 import re
 import time
-import zipfile
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from http.client import InvalidURL
 from pathlib import Path
 from urllib.error import HTTPError
-from urllib.parse import quote, urlsplit
+from urllib.parse import urlsplit
 
 import duckdb
 import pymupdf
@@ -40,24 +38,29 @@ from shared.pdf_text import load_cid_map, pdf_pages
 
 logger = logging.getLogger("pipelines")
 
-RS_SITE = "https://rssystem.go.jp"
-RS_CSV = "1-3_RS_{year}_基本情報_政策・施策、法令等.zip"
-FIRST_YEAR = 2024
+# 行政事業レビューのシートをテーブルにした Queria の公開データセット（queria/rssystem）。
+# 行政事業レビュー見える化サイトから直接 CSV を取ると、GitHub のランナーによっては画面の HTML が返るので、こちらを読む
+RSSYSTEM = "ducklake:https://data.queria.io/datasets/queria/rssystem/ducklake.duckdb"
 INTERVAL = 1.0
 
 
-def review_zip(year: int, user_agent: str) -> bytes | None:
-    url = f"{RS_SITE}/files/{year}/rs/{quote(RS_CSV.format(year=year))}"
-    body = fetch(url, user_agent=user_agent, not_found_ok=True)
-    # ZIP の無い年度にはサイトの画面の HTML が 200 で返る
-    return body if body is not None and body.startswith(b"PK") else None
+def review_rows(user_agent: str) -> dict[int, list[dict]]:
+    """年度 → その年度のシートの計画・通知等の行（plan_title・plan_url）。
 
-
-def review_rows(body: bytes) -> list[dict]:
-    with zipfile.ZipFile(io.BytesIO(body)) as archive:
-        (member,) = [n for n in archive.namelist() if n.lower().endswith(".csv")]
-        text = archive.read(member).decode("utf-8-sig")
-    return list(csv.DictReader(io.StringIO(text)))
+    data.queria.io はビルドの読み出しを利用者に数えないよう、build-fdl.sh が渡す QUERIA_USER_AGENT で読む。
+    """
+    agent = os.environ.get("QUERIA_USER_AGENT") or user_agent
+    with duckdb.connect(config={"custom_user_agent": agent}) as con:
+        con.execute("INSTALL ducklake; LOAD ducklake; INSTALL httpfs; LOAD httpfs")
+        con.execute(f"ATTACH '{RSSYSTEM}' AS rssystem (READ_ONLY)")
+        rows = con.execute(
+            "SELECT review_year, plan_title, plan_url FROM rssystem.review.related_plans"
+            " ORDER BY review_year, project_id, plan_number"
+        ).fetchall()
+    years: defaultdict[int, list[dict]] = defaultdict(list)
+    for year, title, url in rows:
+        years[year].append({"plan_title": title, "plan_url": url})
+    return dict(years)
 
 
 def is_target(url: str, hosts: Iterable[str]) -> bool:
@@ -73,21 +76,20 @@ def year_titles(rows: Iterable[dict], hosts: Iterable[str]) -> dict[str, str]:
     names: defaultdict[str, Counter[str]] = defaultdict(Counter)
     for row in rows:
         # シートの URL には途中に空白が入ったものがある（keizai- shimon など）ので、空白を除く
-        url = re.sub(r"\s+", "", row.get("計画通知等URL") or "")
+        url = re.sub(r"\s+", "", row.get("plan_url") or "")
         if is_target(url, hosts):
-            names[url][(row.get("計画通知名") or "").strip()] += 1
+            names[url][(row.get("plan_title") or "").strip()] += 1
     return {url: counts.most_common(1)[0][0] for url, counts in names.items()}
 
 
 def plan_urls(hosts: Iterable[str], user_agent: str) -> dict[str, str]:
     """計画・通知等の URL → 名前。同じ URL は後の年度のシートの名前を使う。"""
-    years = range(FIRST_YEAR, datetime.date.today().year + 2)
-    bodies = [b for b in (review_zip(y, user_agent) for y in years) if b is not None]
-    if not bodies:
-        raise SystemExit("plans: 行政事業レビューの CSV が取れない")
+    years = review_rows(user_agent)
+    if not years:
+        raise SystemExit("plans: 行政事業レビューの計画・通知等が 1 行も無い")
     titles: dict[str, str] = {}
-    for body in bodies:
-        titles |= year_titles(review_rows(body), hosts)
+    for year in sorted(years):
+        titles |= year_titles(years[year], hosts)
     return titles
 
 

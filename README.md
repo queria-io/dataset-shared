@@ -91,7 +91,7 @@ pages = pdf_pages(Path("data/pdf/a.pdf").read_bytes(), cid_map)  # Page(page, la
 
 ## 行政事業レビューが挙げる計画・通知等
 
-`review_plans.py` は、行政事業レビュー見える化サイトのシート（1-3 政策・施策、法令等、2024 年度から）が「関係する計画・通知等」に挙げる URL のうち、指定したサイトの PDF を取得して、ページごとの本文の Parquet にする部品。省庁のデータセットが、自分のサイトの文書だけを取り込むのに使う。`pymupdf` と `duckdb` を使う。
+`review_plans.py` は、行政事業レビュー見える化サイトのシート（1-3 政策・施策、法令等、2024 年度から）が「関係する計画・通知等」に挙げる URL のうち、指定したサイトの PDF を取得して、ページごとの本文の Parquet にする部品。省庁のデータセットが、自分のサイトの文書だけを取り込むのに使う。`pymupdf` と `duckdb` を使う。URL は、シートをテーブルにした Queria の公開データセット `queria/rssystem` の `review.related_plans` から読む（`QUERIA_USER_AGENT` があればその名前で読む）。
 
 ```python
 from shared.review_plans import build_plans_parquet, download_plans
