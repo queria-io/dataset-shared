@@ -32,7 +32,37 @@ class IsTargetTest(unittest.TestCase):
         self.assertFalse(review_plans.is_target("", HOSTS))
 
 
+MOVED = {"https://www.kantei.go.jp/jp/singi/": "https://www.cas.go.jp/jp/seisakukaigi/"}
+
+
+class RelocateTest(unittest.TestCase):
+    def test_prefix(self):
+        self.assertEqual(
+            review_plans.relocate("https://www.kantei.go.jp/jp/singi/a/b.pdf", MOVED),
+            "https://www.cas.go.jp/jp/seisakukaigi/a/b.pdf",
+        )
+        self.assertEqual(
+            review_plans.relocate("https://www.kantei.go.jp/jp/headline/c.pdf", MOVED),
+            "https://www.kantei.go.jp/jp/headline/c.pdf",
+        )
+        self.assertEqual(review_plans.relocate("https://x/a.pdf"), "https://x/a.pdf")
+
+
 class YearTitlesTest(unittest.TestCase):
+    def test_moved(self):
+        rows = [
+            row("https://www.kantei.go.jp/jp/singi/a.pdf", "会議の決定"),
+            row("https://www.kantei.go.jp/jp/headline/c.pdf", "官邸"),
+            row("https://www.cas.go.jp/d.pdf", "内閣官房"),
+        ]
+        self.assertEqual(
+            review_plans.year_titles(rows, {"www.cas.go.jp"}, MOVED),
+            {
+                "https://www.kantei.go.jp/jp/singi/a.pdf": "会議の決定",
+                "https://www.cas.go.jp/d.pdf": "内閣官房",
+            },
+        )
+
     def test_most_common_title(self):
         rows = [
             row("https://www.mlit.go.jp/a.pdf", "計画 P10"),

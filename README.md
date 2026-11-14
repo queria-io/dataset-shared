@@ -100,10 +100,11 @@ download_plans({"www.mlit.go.jp"}, user_agent=USER_AGENT, pdf_dir=Path("data/pla
 build_plans_parquet(user_agent=USER_AGENT, pdf_dir=Path("data/plans"), parquet_dir=Path("data/parquet"))
 ```
 
-- 出力は `plans_documents.parquet`（url・sha256・title・bytes・page_count・fetched_at、1 行が 1 URL）と `plans_pages.parquet`（sha256・page・page_label・text・cid_repaired_chars）
+- 出力は `plans_documents.parquet`（url・sha256・title・bytes・page_count・fetched_url・fetched_at、1 行がシートの 1 URL）と `plans_pages.parquet`（sha256・page・page_label・text・cid_repaired_chars）
 - PDF は 1 秒に 1 回の頻度で取得する。404 などのクライアントエラーと PDF ではない応答は飛ばし、5xx は止める。開けない PDF（壊れている・パスワードが要る）も飛ばす
 - 手元では取得済みの URL を `pdf_dir/index.json` で覚えて取り直さない
 - 同じ URL に複数の名前があるときは、新しい年度のシートで最も多く書かれている名前を使う
+- サイトが移転してシートの URL が転送のお知らせになっているときは、`moved`（シートの URL の先頭 → 移転先の URL の先頭の辞書）を渡す。移転先が `hosts` のサイトになる URL も集め、移転先から取得する。`url` はシートの URL のまま、取得した URL は `fetched_url` に入る
 
 ### submodule の版を上げる
 

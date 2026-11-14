@@ -6,13 +6,17 @@
 
     HOSTS = {"www.mlit.go.jp"}
     download_plans(HOSTS, user_agent=USER_AGENT, pdf_dir=Path("data/plans"))
+    # 移転したページは、シートの URL の先頭を移転先に置き換えて取得する
+    download_plans(HOSTS, user_agent=USER_AGENT, pdf_dir=Path("data/plans"), moved={"https://old/": "https://new/"})
     build_plans_parquet(user_agent=USER_AGENT, pdf_dir=Path("data/plans"), parquet_dir=Path("data/parquet"))
 
 1. 行政事業レビュー見える化サイト（https://rssystem.go.jp）のシートをテーブルにした Queria の公開データセット
-   queria/rssystem の review.related_plans から、計画・通知等の URL のうち hosts のサイトの PDF を集める
+   queria/rssystem の review.related_plans から、計画・通知等の URL のうち hosts のサイトの PDF を集める。
+   moved（シートの URL の先頭 → 移転先の URL の先頭）を渡すと、移転先が hosts のサイトになる URL も集め、移転先から取得する
 2. PDF を 1 秒に 1 回の頻度で取得して sha256 を付ける。手元では取得済みの URL を pdf_dir/index.json で覚えて取り直さない
 3. ページごとに文字を取り出し（shared/pdf_text.py）、Parquet にする
-   （<parquet_dir>/plans_documents.parquet: 1 行が 1 URL、plans_pages.parquet: 1 行が 1 ページ）
+   （<parquet_dir>/plans_documents.parquet: 1 行がシートの 1 URL で、取得した URL を fetched_url に持つ。
+   plans_pages.parquet: 1 行が 1 ページ）
 
 使うデータセットは pyproject.toml に pymupdf と duckdb を追加する。
 """
@@ -25,7 +29,7 @@ import os
 import re
 import time
 from collections import Counter, defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from http.client import InvalidURL
 from pathlib import Path
 from urllib.error import HTTPError
@@ -63,13 +67,23 @@ def review_rows(user_agent: str) -> dict[int, list[dict]]:
     return dict(years)
 
 
+def relocate(url: str, moved: Mapping[str, str] | None = None) -> str:
+    """移転したページの URL を移転先の URL にする。moved はシートの URL の先頭 → 移転先の URL の先頭。"""
+    return next(
+        (new + url[len(old) :] for old, new in (moved or {}).items() if url.startswith(old)),
+        url,
+    )
+
+
 def is_target(url: str, hosts: Iterable[str]) -> bool:
     parts = urlsplit(url.strip())
     return parts.hostname in set(hosts) and parts.path.lower().endswith(".pdf")
 
 
-def year_titles(rows: Iterable[dict], hosts: Iterable[str]) -> dict[str, str]:
-    """1 年度のシートの行から、hosts の PDF の URL → 名前。
+def year_titles(
+    rows: Iterable[dict], hosts: Iterable[str], moved: Mapping[str, str] | None = None
+) -> dict[str, str]:
+    """1 年度のシートの行から、hosts の PDF の URL（移転したものは移転先が hosts のもの）→ 名前。
 
     同じ URL に複数の名前があるときは、最も多く書かれている名前を使う（同数なら先に出てきた名前）。
     """
@@ -77,19 +91,21 @@ def year_titles(rows: Iterable[dict], hosts: Iterable[str]) -> dict[str, str]:
     for row in rows:
         # シートの URL には途中に空白が入ったものがある（keizai- shimon など）ので、空白を除く
         url = re.sub(r"\s+", "", row.get("plan_url") or "")
-        if is_target(url, hosts):
+        if is_target(relocate(url, moved), hosts):
             names[url][(row.get("plan_title") or "").strip()] += 1
     return {url: counts.most_common(1)[0][0] for url, counts in names.items()}
 
 
-def plan_urls(hosts: Iterable[str], user_agent: str) -> dict[str, str]:
+def plan_urls(
+    hosts: Iterable[str], user_agent: str, moved: Mapping[str, str] | None = None
+) -> dict[str, str]:
     """計画・通知等の URL → 名前。同じ URL は後の年度のシートの名前を使う。"""
     years = review_rows(user_agent)
     if not years:
         raise SystemExit("plans: 行政事業レビューの計画・通知等が 1 行も無い")
     titles: dict[str, str] = {}
     for year in sorted(years):
-        titles |= year_titles(years[year], hosts)
+        titles |= year_titles(years[year], hosts, moved)
     return titles
 
 
@@ -98,10 +114,16 @@ def read_index(pdf_dir: Path) -> dict[str, dict]:
     return json.loads(path.read_text()) if path.exists() else {}
 
 
-def download_plans(hosts: Iterable[str], *, user_agent: str, pdf_dir: Path) -> None:
-    """PDF を pdf_dir/<sha256>.pdf に置き、URL → sha256・名前・取得日時を pdf_dir/index.json に書く。"""
+def download_plans(
+    hosts: Iterable[str],
+    *,
+    user_agent: str,
+    pdf_dir: Path,
+    moved: Mapping[str, str] | None = None,
+) -> None:
+    """PDF を pdf_dir/<sha256>.pdf に置き、シートの URL → sha256・名前・取得した URL・取得日時を pdf_dir/index.json に書く。"""
     pdf_dir.mkdir(parents=True, exist_ok=True)
-    urls = plan_urls(hosts, user_agent)
+    urls = plan_urls(hosts, user_agent, moved)
     # シートから消えた URL は外す
     index = {url: entry for url, entry in read_index(pdf_dir).items() if url in urls}
     try:
@@ -109,9 +131,10 @@ def download_plans(hosts: Iterable[str], *, user_agent: str, pdf_dir: Path) -> N
             if url in index:
                 index[url]["title"] = title
                 continue
+            fetched_url = relocate(url, moved)
             time.sleep(INTERVAL)
             try:
-                body = fetch(url, user_agent=user_agent, not_found_ok=True)
+                body = fetch(fetched_url, user_agent=user_agent, not_found_ok=True)
             except HTTPError as error:
                 # 404 以外のクライアントエラー（403・410 など）もリンク切れとして扱う。
                 # 5xx は再試行しても失敗したときにそのまま止める
@@ -122,15 +145,20 @@ def download_plans(hosts: Iterable[str], *, user_agent: str, pdf_dir: Path) -> N
                 # シートの URL に空白などが入っていて、要求を送れない
                 body = None
             if body is None:
-                logger.info("plans: 取得できない: %s", url)
+                logger.info("plans: 取得できない: %s", fetched_url)
                 continue
             if not body.startswith(b"%PDF"):
-                logger.info("plans: PDF ではない応答: %s", url)
+                logger.info("plans: PDF ではない応答: %s", fetched_url)
                 continue
             digest = hashlib.sha256(body).hexdigest()
             write_atomic(pdf_dir / f"{digest}.pdf", body)
             fetched_at = datetime.datetime.now(datetime.UTC).isoformat()
-            index[url] = {"sha256": digest, "title": title, "fetched_at": fetched_at}
+            index[url] = {
+                "sha256": digest,
+                "title": title,
+                "fetched_url": fetched_url,
+                "fetched_at": fetched_at,
+            }
     finally:
         # 途中で止まっても、取得済みの PDF を次の実行で取り直さない
         write_atomic(
@@ -163,6 +191,8 @@ def build_plans_parquet(*, user_agent: str, pdf_dir: Path, parquet_dir: Path) ->
                 entry["title"],
                 path.stat().st_size,
                 len(pages[digest]),
+                # fetched_url を書く前の index.json の行は、シートの URL から取得している
+                entry.get("fetched_url", url),
                 entry["fetched_at"],
             )
         )
@@ -171,9 +201,9 @@ def build_plans_parquet(*, user_agent: str, pdf_dir: Path, parquet_dir: Path) ->
     con = duckdb.connect()
     con.execute(
         "CREATE TABLE documents (url VARCHAR, sha256 VARCHAR, title VARCHAR, bytes BIGINT,"
-        " page_count INTEGER, fetched_at TIMESTAMPTZ)"
+        " page_count INTEGER, fetched_url VARCHAR, fetched_at TIMESTAMPTZ)"
     )
-    con.executemany("INSERT INTO documents VALUES (?, ?, ?, ?, ?, ?)", documents)
+    con.executemany("INSERT INTO documents VALUES (?, ?, ?, ?, ?, ?, ?)", documents)
     con.execute(
         "CREATE TABLE pages (sha256 VARCHAR, page INTEGER, page_label VARCHAR, text VARCHAR,"
         " cid_repaired_chars INTEGER)"
