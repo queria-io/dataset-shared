@@ -74,6 +74,21 @@ with replacing(Path("data/places/place.ndjson")) as partial:
 
 データセットに新しく取得処理を書くときは、`urlopen` を直接呼ばずにこれを使う。テストは `uv run --no-project --python 3.13 python -m unittest discover -s tests` で流す。
 
+## PDF の本文
+
+`pdf_text.py` は、PDF からページごとの本文を取り出す部品。PyMuPDF を使うので、読むデータセットは `pyproject.toml` に `pymupdf` を追加する。
+
+```python
+from shared.pdf_text import load_cid_map, pdf_pages
+
+cid_map = load_cid_map(USER_AGENT)
+pages = pdf_pages(Path("data/pdf/a.pdf").read_bytes(), cid_map)  # Page(page, label, text, cid_repaired_chars)
+```
+
+- 本文は NFKC で正規化する
+- 文字コードの対応表（ToUnicode）が無いフォントでは、PyMuPDF が文字の代わりに Adobe-Japan1 の CID を返す。ページの中でその文字の 5% 超が普段の日本語の文書に出ない文字コードになるフォントでは、U+3000 より前の文字を CID とみなし、Adobe の [Adobe-Japan1-UCS2](https://github.com/adobe-type-tools/mapping-resources-pdf)（コミット固定）で文字に戻す。戻した文字の数は `cid_repaired_chars`
+- テストは CI の test.yml で他のテストと一緒に流す（手元では `--with pymupdf` を付ける）
+
 ### submodule の版を上げる
 
 各データセットリポは `shared` のコミットと、呼び出すワークフロー（`uses: queria-io/dataset-shared/.github/workflows/<name>@<SHA>`）を同じ SHA に固定している。ここを直しても、各リポで固定を上げる PR をマージするまでは効かない。dataset-shared の main に誤って入った変更が、全データセットのシークレットと書き込み権を持って一度に動かないようにするため。上げる PR では dataset-shared の差分を確認する。
