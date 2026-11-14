@@ -38,6 +38,7 @@ macro-paths: ["macros", "shared/macros"]
 - `macros/catalog.sql`: dbt-duckdb の `duckdb__get_catalog` オーバーライド。全アタッチ DB を対象にする修正
 - `macros/generate_schema_name.sql`: サブディレクトリ名をスキーマ名として使用
 - `macros/local_government_code.sql`: 5 桁の市区町村コードに検査数字を付けて 6 桁の全国地方公共団体コードにする（`{{ local_government_code('city_code') }}`）
+- `macros/page_bigrams.sql`: ページの本文を空白・改行を除いて 2 文字ずつ区切り、ページごとの出現回数（`tf`）を数える全文検索の索引（`{{ page_bigrams(ref('pages'), ['sha256', 'page']) }}`）
 
 ## 雛形
 
@@ -73,6 +74,21 @@ with replacing(Path("data/places/place.ndjson")) as partial:
 - `replacing` / `write_atomic`: 一時ファイル（`<名前>.part`）に書いてから置き換える。途中で失敗したときと、`with` の中で例外を投げたとき（0件だった、など）は前回の出力を残す。取得済みのファイルを `exists()` で飛ばすデータセットでは、書きかけのファイルが取得済みとして残らない
 
 データセットに新しく取得処理を書くときは、`urlopen` を直接呼ばずにこれを使う。テストは `uv run --no-project --python 3.13 python -m unittest discover -s tests` で流す。
+
+## PDF の本文
+
+`pdf_text.py` は、PDF からページごとの本文を取り出す部品。PyMuPDF を使うので、読むデータセットは `pyproject.toml` に `pymupdf` を追加する。
+
+```python
+from shared.pdf_text import load_cid_map, pdf_pages
+
+cid_map = load_cid_map(USER_AGENT)
+pages = pdf_pages(Path("data/pdf/a.pdf").read_bytes(), cid_map)  # Page(page, label, text, cid_repaired_chars)
+```
+
+- 本文は NFKC で正規化する
+- 文字コードの対応表（ToUnicode）が無いフォントでは、PyMuPDF が文字の代わりに Adobe-Japan1 の CID を返す。ページの中でその文字の 5% 超が普段の日本語の文書に出ない文字コードになるフォントでは、U+3000 より前の文字を CID とみなし、Adobe の [Adobe-Japan1-UCS2](https://github.com/adobe-type-tools/mapping-resources-pdf)（コミット固定）で文字に戻す。戻した文字の数は `cid_repaired_chars`
+- テストは `uv run --no-project --python 3.13 --with pymupdf python -m unittest tests.test_pdf_text`
 
 ### submodule の版を上げる
 
