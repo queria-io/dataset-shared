@@ -23,6 +23,7 @@ import hashlib
 import io
 import json
 import logging
+import re
 import time
 import zipfile
 from collections import Counter, defaultdict
@@ -71,7 +72,8 @@ def year_titles(rows: Iterable[dict], hosts: Iterable[str]) -> dict[str, str]:
     """
     names: defaultdict[str, Counter[str]] = defaultdict(Counter)
     for row in rows:
-        url = (row.get("計画通知等URL") or "").strip()
+        # シートの URL には途中に空白が入ったものがある（keizai- shimon など）ので、空白を除く
+        url = re.sub(r"\s+", "", row.get("計画通知等URL") or "")
         if is_target(url, hosts):
             names[url][(row.get("計画通知名") or "").strip()] += 1
     return {url: counts.most_common(1)[0][0] for url, counts in names.items()}

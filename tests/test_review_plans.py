@@ -37,7 +37,7 @@ class YearTitlesTest(unittest.TestCase):
             row("https://www.mlit.go.jp/a.pdf", "計画 P10"),
             row("https://www.mlit.go.jp/a.pdf", "計画"),
             row("https://www.mlit.go.jp/a.pdf", "計画"),
-            row("https://www.mlit.go.jp/b.pdf", "通知"),
+            row("https://www.mlit.go.jp/b .pdf", "通知"),
             row("https://www.mhlw.go.jp/c.pdf", "他省"),
         ]
         self.assertEqual(
