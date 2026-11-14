@@ -19,6 +19,12 @@ DATASET_NAME:
       # ときにしか決められず、SET では変えられない
       config_options:
         custom_user_agent: "{{ env_var('QUERIA_USER_AGENT', '') }}"
+      # incremental のモデルが公開中のデータファイルを読むときに、リポジトリのトークンを付ける。
+      # 非公開のデータセットはトークンが無いと 404 になる (shared/scripts/fdl_read.py)
+      module_paths:
+        - shared/scripts
+      plugins:
+        - module: fdl_read
       # fdl checkout が作った作業場のカタログ (SQLite) に書く。新しいデータファイルは
       # FDL_DATA_PATH (data.queria.io から取り出したときは手元のフォルダ) に書き、
       # fdl commit が上げる (shared/scripts/build-fdl.sh)
