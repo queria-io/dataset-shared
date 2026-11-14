@@ -89,6 +89,22 @@ pages = pdf_pages(Path("data/pdf/a.pdf").read_bytes(), cid_map)  # Page(page, la
 - 文字コードの対応表（ToUnicode）が無いフォントでは、PyMuPDF が文字の代わりに Adobe-Japan1 の CID を返す。ページの中でその文字の 5% 超が普段の日本語の文書に出ない文字コードになるフォントでは、U+3000 より前の文字を CID とみなし、Adobe の [Adobe-Japan1-UCS2](https://github.com/adobe-type-tools/mapping-resources-pdf)（コミット固定）で文字に戻す。戻した文字の数は `cid_repaired_chars`
 - テストは CI の test.yml で他のテストと一緒に流す（手元では `--with pymupdf` を付ける）
 
+## 行政事業レビューが挙げる計画・通知等
+
+`review_plans.py` は、行政事業レビュー見える化サイトのシート（1-3 政策・施策、法令等、2024 年度から）が「関係する計画・通知等」に挙げる URL のうち、指定したサイトの PDF を取得して、ページごとの本文の Parquet にする部品。省庁のデータセットが、自分のサイトの文書だけを取り込むのに使う。`pymupdf` と `duckdb` を使う。URL は、シートをテーブルにした Queria の公開データセット `queria/rssystem` の `review.related_plans` から読む（`QUERIA_USER_AGENT` があればその名前で読む）。
+
+```python
+from shared.review_plans import build_plans_parquet, download_plans
+
+download_plans({"www.mlit.go.jp"}, user_agent=USER_AGENT, pdf_dir=Path("data/plans"))
+build_plans_parquet(user_agent=USER_AGENT, pdf_dir=Path("data/plans"), parquet_dir=Path("data/parquet"))
+```
+
+- 出力は `plans_documents.parquet`（url・sha256・title・bytes・page_count・fetched_at、1 行が 1 URL）と `plans_pages.parquet`（sha256・page・page_label・text・cid_repaired_chars）
+- PDF は 1 秒に 1 回の頻度で取得する。404 などのクライアントエラーと PDF ではない応答は飛ばし、5xx は止める。開けない PDF（壊れている・パスワードが要る）も飛ばす
+- 手元では取得済みの URL を `pdf_dir/index.json` で覚えて取り直さない
+- 同じ URL に複数の名前があるときは、新しい年度のシートで最も多く書かれている名前を使う
+
 ### submodule の版を上げる
 
 各データセットリポは `shared` のコミットと、呼び出すワークフロー（`uses: queria-io/dataset-shared/.github/workflows/<name>@<SHA>`）を同じ SHA に固定している。ここを直しても、各リポで固定を上げる PR をマージするまでは効かない。dataset-shared の main に誤って入った変更が、全データセットのシークレットと書き込み権を持って一度に動かないようにするため。上げる PR では dataset-shared の差分を確認する。
