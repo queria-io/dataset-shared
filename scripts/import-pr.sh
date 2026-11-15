@@ -18,13 +18,20 @@ git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 git switch -C "$branch"
 # Removed files are not in the work tree, so add them with -A, path by path.
 # A file the build makes and git ignores is not this repository's to change.
+paths=()
 while IFS= read -r path; do
     if git check-ignore -q -- "$path"; then
         continue
     fi
     git add -A -- "$path"
+    paths+=("$path")
 done <"$list"
 if git diff --cached --quiet; then
+    exit 0
+fi
+# A build that started before an import pull request merged still sees the old
+# files. When the default branch already holds these files, there is nothing to bring.
+if git fetch -q "$origin" HEAD 2>/dev/null && git diff --cached --quiet FETCH_HEAD -- "${paths[@]}"; then
     exit 0
 fi
 git commit -q -m "docs: bring the description changed on Queria into this repository" \
