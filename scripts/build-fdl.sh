@@ -58,21 +58,17 @@ fi
 # its data files (the data_dir in fdl.json; write and read, no delete): nothing
 # stays on this machine, so a small disk can build a large dataset. The key lasts
 # minutes; DuckDB takes a new one whenever storage refuses the old
-# (scripts/storage_key.py). Without one, checkout keeps new files in a local
+# (scripts/storage_key.py). Without one, clone keeps new files in a local
 # folder that the commit uploads.
 storage=()
-# (An fdl older than checkout --storage keeps the local folder.) The help is read
-# without colors: on GitHub Actions typer colors it, which splits "--storage".
 if [ "${FDL_DIRECT:-1}" != 0 ] \
-    && env -u GITHUB_ACTIONS -u FORCE_COLOR -u PY_COLORS uv run fdl checkout --help 2>/dev/null \
-        | grep -- --storage >/dev/null \
     && keys="$(uv run python "$(dirname "$0")/storage_key.py" issue "$remote")"; then
     eval "$keys"
     trap 'uv run python "$(dirname "$0")/storage_key.py" drop || true' EXIT
     storage=(--storage "$FDL_STORAGE")
 fi
 
-# Where the build writes new data files. Over HTTP checkout keeps them in a local
+# Where the build writes new data files. Over HTTP clone keeps them in a local
 # folder (recorded beside the working catalog) until commit uploads them; with
 # --storage they go to the repository's data_dir in its storage; otherwise they go
 # where the catalog says. The catalog's own data_path is where readers find the
@@ -99,7 +95,7 @@ PY
 
 # Every build starts from what is published now, so a version is built on main.
 rm -rf .fdl
-uv run fdl checkout "$remote" "$work" ${storage[@]+"${storage[@]}"}
+uv run fdl clone "$remote" "$work" ${storage[@]+"${storage[@]}"}
 FDL_DATA_PATH="$(data_path)"
 # Queria's key reaches the data files alone (FDL_STORAGE_DATA). If they are
 # somewhere else, the key cannot write them: build through a local folder.
@@ -110,7 +106,7 @@ if [ -n "${storage[*]+x}" ] && [ "$FDL_DATA_PATH" != "${FDL_STORAGE_DATA:-}" ]; 
     unset FDL_STORAGE FDL_STORAGE_DATA FDL_STORAGE_SECRET AWS_CONFIG_FILE
     storage=()
     rm -rf .fdl
-    uv run fdl checkout "$remote" "$work"
+    uv run fdl clone "$remote" "$work"
     FDL_DATA_PATH="$(data_path)"
 fi
 export FDL_WORKING="$PWD/$work"

@@ -11,7 +11,7 @@ Usage:
 
 Queria gives a key to the dataset's data files only (the data_dir in its
 fdl.json; it reads and writes, and cannot delete), and like any of its keys it
-lasts minutes. With it, `fdl checkout --storage` has the build write new data
+lasts minutes. With it, `fdl clone --storage` has the build write new data
 files straight to the repository, so nothing is kept on this machine until the
 commit.
 
