@@ -7,6 +7,7 @@ import json
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 import duckdb
@@ -42,6 +43,10 @@ class SetupTest(unittest.TestCase):
         self.assertEqual(fdl_read.setup(working(None), lambda remote: "token"), [])
         self.assertEqual(fdl_read.setup(working({"remote": REMOTE}), lambda remote: None), [])
         self.assertEqual(fdl_read.setup(working({"remote": "/tmp/repo"}), lambda remote: "token"), [])
+
+    def test_statements_read_fdl_working(self):
+        with unittest.mock.patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(fdl_read.statements(), [])
 
 
 if __name__ == "__main__":

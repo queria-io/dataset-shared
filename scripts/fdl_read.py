@@ -14,6 +14,10 @@ profiles.yml (templates/profiles.yml has it):
     plugins:
       - module: fdl_read
 
+A dataset's own Python that reads the published catalog (to skip what is
+published already, say) runs ``fdl_read.statements()`` on its DuckDB connection
+before it attaches the working catalog.
+
 Without FDL_WORKING (a PR check builds into a local file) or without a token,
 it does nothing.
 """
@@ -52,7 +56,13 @@ def _token(remote: str) -> str | None:
     return getattr(open_store(remote), "token", None)
 
 
+def statements() -> list[str]:
+    """The statements for this build's working catalog (FDL_WORKING). A dataset's own
+    Python that reads the published catalog outside dbt runs them on its connection."""
+    return setup(os.environ.get("FDL_WORKING"), _token)
+
+
 class Plugin(BasePlugin):
     def configure_connection(self, conn) -> None:
-        for statement in setup(os.environ.get("FDL_WORKING"), _token):
+        for statement in statements():
             conn.execute(statement)
