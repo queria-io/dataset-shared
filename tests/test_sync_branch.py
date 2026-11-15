@@ -21,17 +21,17 @@ def decide(versions: dict, refs: dict) -> str:
         found = refs.get(name)
         return V(id=found, parents=versions[found]) if found else None
 
-    def is_ancestor(_store, ancestor, descendant):
-        todo = [descendant.id]
-        while todo:
-            current = todo.pop()
+    def in_history(_store, ancestor, descendant):
+        current = descendant.id
+        while current is not None:
             if current == ancestor:
                 return True
-            todo += versions[current]
+            parents = versions[current]
+            current = parents[0] if parents else None
         return False
 
     with mock.patch.object(sync_branch.repo, "head", head), mock.patch.object(
-        sync_branch.repo, "is_ancestor", is_ancestor
+        sync_branch.repo, "in_history", in_history
     ):
         return sync_branch.decide(None)
 
@@ -56,6 +56,15 @@ class DecideTest(unittest.TestCase):
     def test_a_change_on_main_asks_for_a_request(self):
         versions = {"a": (), "h": ("a",), "b": ("a",)}
         self.assertEqual(decide(versions, {MAIN: "h", SYNC: "b"}), "request")
+
+    def test_main_that_merged_an_earlier_build_is_merged_again(self):
+        # a run pushed b2 to sync and stopped before merging it
+        versions = {"a": (), "b": ("a",), "m": ("a", "b"), "b2": ("b",), "c": ("b2",)}
+        self.assertEqual(decide(versions, {MAIN: "m", SYNC: "c"}), "auto")
+
+    def test_a_merge_of_another_branch_asks_for_a_request(self):
+        versions = {"a": (), "x": ("a",), "b": ("a",), "m": ("a", "x"), "c": ("b",)}
+        self.assertEqual(decide(versions, {MAIN: "m", SYNC: "c"}), "request")
 
     def test_a_change_after_the_last_merge_asks_for_a_request(self):
         versions = {"a": (), "b": ("a",), "m": ("a", "b"), "h": ("m",), "c": ("b",)}

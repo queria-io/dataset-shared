@@ -101,7 +101,10 @@ PY
 # Every build starts from the last build, on the sync branch. Before the first,
 # the branch starts where main is.
 rm -rf .fdl
-if [ "$(uv run python "$(dirname "$0")/sync_branch.py" "$remote")" = start ]; then
+# Assigned first, so that set -e stops the build when the decision cannot be
+# read: cloning a sync branch that was never started would build from nothing.
+decision="$(uv run python "$(dirname "$0")/sync_branch.py" "$remote")"
+if [ "$decision" = start ]; then
     uv run fdl branch "$remote" sync refs/heads/main >/dev/null
 fi
 uv run fdl clone "$remote" "$work" --branch sync ${storage[@]+"${storage[@]}"}
@@ -152,7 +155,9 @@ uv run fdl commit "$work" -m "${FDL_MESSAGE:-build}" --author "$author" ${descri
 uv run fdl push "$work"
 
 # Bring sync into main, or ask people to.
-case "$(uv run python "$(dirname "$0")/sync_branch.py" "$remote")" in
+decision="$(uv run python "$(dirname "$0")/sync_branch.py" "$remote")"
+request=
+case "$decision" in
 new)
     uv run fdl branch "$remote" main refs/heads/sync
     ;;
@@ -169,12 +174,21 @@ request)
     echo "main has changes of its own since the last build: opening a change request" >&2
     request=1
     ;;
+*)
+    echo "sync_branch.py answered ${decision:-nothing}: main is left as it is" >&2
+    exit 1
+    ;;
 esac
-if [ -n "${request:-}" ]; then
+if [ -n "$request" ]; then
     slug="$(printf '%s' "$remote" | sed -E 's#^.*/datasets/([^/]+)/([^/]+)/?$#\1/\2#')"
-    out="$(QUERIA_TOKEN="$(uv run python "$(dirname "$0")/queria_token.py")" \
-        uvx queria@latest dataset request create "$slug" --branch sync \
+    # An empty QUERIA_TOKEN asks queria for anonymous access, so set it only when
+    # there is a token; otherwise queria uses its own login.
+    if token="$(uv run python "$(dirname "$0")/queria_token.py")"; then
+        export QUERIA_TOKEN="$token"
+    fi
+    # queria prints the server's message ("sync already has open request #N"), not its code.
+    out="$(uvx queria@latest dataset request create "$slug" --branch sync \
         --title "${FDL_MESSAGE:-build}" --body "Built from ${GITHUB_REPOSITORY:-this repository}${GITHUB_SHA:+ at $GITHUB_SHA}" 2>&1)" \
-        || case "$out" in *request_exists*) echo "the open change request from sync now shows this build" >&2 ;; *) echo "$out" >&2; exit 1 ;; esac
+        || case "$out" in *request_exists* | *"already has open request"*) echo "the open change request from sync now shows this build" >&2 ;; *) echo "$out" >&2; exit 1 ;; esac
     echo "$out"
 fi

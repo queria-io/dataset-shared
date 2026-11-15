@@ -27,10 +27,15 @@ def decide(store) -> str:
         return "new"
     if sync is None:
         return "start"
-    # main is behind sync, or is a merge of this build's parent or of sync itself
-    # (a Sync's merge, or a change request from sync merged on Queria).
-    synced = {sync.id, *sync.parents[:1]}
-    if repo.is_ancestor(store, main.id, sync) or set(main.parents[1:]) & synced:
+    # main is a merge of a version on sync (a Sync's merge, or a change request
+    # from sync merged on Queria), or main is behind sync. sync only ever grows
+    # by first parent, so both walk its first-parent history, which stops at the
+    # version's seq instead of reading every version behind sync. A merge of an
+    # older sync version still counts, so a run that pushed sync and stopped
+    # before the merge does not leave every later build asking for a request.
+    if any(repo.in_history(store, merged, sync) for merged in main.parents[1:]):
+        return "auto"
+    if repo.in_history(store, main.id, sync):
         return "auto"
     return "request"
 
