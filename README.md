@@ -272,6 +272,21 @@ Gold にあたる層をデータセット側に持つと、用途の数だけテ
   アンカーが決まらない行はページの URL まで、ページが決まらない行は NULL にする
 - テーブルの説明に、その URL で何が開くかを書く
 
+## 元のファイル
+
+Excel・CSV・PDF・ZIP など、配布元がファイルで配るデータは、取得したファイルを FDL のアセットとして
+バージョンに入れる。どの行をどのファイルから、いつ、どこから取得したかを、配布元でファイルが
+差し替えられたり消えたりした後も確認できるようにするため。一覧のテーブル（`source_file`）の列、
+各行の `source_sha256`、アセットにしないファイルの条件は
+[docs.queria.io/publish/conventions](https://docs.queria.io/publish/conventions#元のファイル) にある。
+
+- 取得したファイルは `data/assets/<sha256>.<拡張子>` に置く
+- `scripts/build.sh` で `export FDL_ASSETS="${FDL_ASSETS:-$PWD/data/assets}"` とする。
+  `build-fdl.sh` が `fdl commit --assets` に渡し、リポジトリに無いファイルだけが上がる
+- 前のバージョンのファイルを読み直すときは、手元に無いものをリポジトリの `assets/<sha256>` から取得し、
+  sha256 を確認してから使う
+- `source_file` も raw → stg → mart で作る。raw は取得の記録（Parquet）を読む
+
 ## 列名の語彙
 
 列名は一般のデータなら schema.org、日本の公的データなら GIF に揃える。列名は
