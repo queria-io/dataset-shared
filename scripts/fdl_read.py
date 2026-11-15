@@ -1,7 +1,7 @@
 """A dbt-duckdb plugin that lets the build read the dataset's own published data files.
 
 An incremental model reads what is published already (``{{ this }}``). The
-working catalog that ``fdl checkout`` made points at those files over HTTP
+working catalog that ``fdl clone`` made points at those files over HTTP
 (``https://data.queria.io/datasets/...``), and a private dataset answers 404
 to a read without a token. This plugin gives DuckDB the repository's token as
 an HTTP secret scoped to the repository, each time dbt opens a connection, so
