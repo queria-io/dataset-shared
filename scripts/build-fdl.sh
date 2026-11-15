@@ -172,6 +172,9 @@ case "$decision" in
 new)
     uv run fdl branch "$remote" main refs/heads/apply
     ;;
+current)
+    echo "main already holds what apply holds"
+    ;;
 auto)
     if ! { uv run fdl merge refs/heads/apply "$main" --author "$author" -m "Merge apply" && uv run fdl push "$main"; }; then
         echo "apply could not be merged into main: opening a change request" >&2

@@ -76,6 +76,12 @@ class DecideTest(unittest.TestCase):
         self.assertEqual(decide(versions, {MAIN: "h", SYNC: "c"}), "request")
 
 
+class CurrentTest(unittest.TestCase):
+    def test_a_change_on_main_with_no_new_build_needs_nothing(self):
+        versions = {"a": (), "h": ("a",)}
+        self.assertEqual(decide(versions, {MAIN: "h", SYNC: "a"}), "current")
+
+
 class SettledTest(unittest.TestCase):
     def test_a_change_the_code_took_too_is_merged(self):
         versions = {"a": (), "h": ("a",), "b": ("a",)}
