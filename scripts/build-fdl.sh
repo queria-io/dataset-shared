@@ -154,16 +154,22 @@ author="${FDL_AUTHOR:-$(git config user.name || echo build)}"
 uv run fdl commit "$work" -m "${FDL_MESSAGE:-build}" --author "$author" ${describe[@]+"${describe[@]}"} ${FDL_ASSETS:+--assets "$FDL_ASSETS"}
 uv run fdl push "$work"
 
-# Bring sync into main, or ask people to.
+# Bring sync into main, or ask people to. main is judged at the version its
+# clone got, so a push to main in between is not merged unseen; a push after the
+# clone makes the push below fail, which opens a change request.
+main=".fdl/main.sqlite"
 decision="$(uv run python "$(dirname "$0")/sync_branch.py" "$remote")"
+if [ "$decision" != new ]; then
+    uv run fdl clone "$remote" "$main" >/dev/null
+    base="$(uv run python -c 'import json, sys; print(json.load(open(sys.argv[1]))["base"])' "$main.fdl.json")"
+    decision="$(uv run python "$(dirname "$0")/sync_branch.py" "$remote" "$base")"
+fi
 request=
 case "$decision" in
 new)
     uv run fdl branch "$remote" main refs/heads/sync
     ;;
 auto)
-    main=".fdl/main.sqlite"
-    uv run fdl clone "$remote" "$main" >/dev/null
     if uv run fdl merge refs/heads/sync "$main" --author "$author" -m "Merge sync" && uv run fdl push "$main"; then
         exit 0
     fi
@@ -180,14 +186,15 @@ request)
     ;;
 esac
 if [ -n "$request" ]; then
-    slug="$(printf '%s' "$remote" | sed -E 's#^.*/datasets/([^/]+)/([^/]+)/?$#\1/\2#')"
+    target="$(uv run python "$(dirname "$0")/sync_branch.py" --target "$remote")"
+    read -r api slug <<<"$target"
     # An empty QUERIA_TOKEN asks queria for anonymous access, so set it only when
     # there is a token; otherwise queria uses its own login.
     if token="$(uv run python "$(dirname "$0")/queria_token.py")"; then
         export QUERIA_TOKEN="$token"
     fi
     # queria prints the server's message ("sync already has open request #N"), not its code.
-    out="$(uvx queria@latest dataset request create "$slug" --branch sync \
+    out="$(QUERIA_API_URL="$api" uvx queria@latest dataset request create "$slug" --branch sync \
         --title "${FDL_MESSAGE:-build}" --body "Built from ${GITHUB_REPOSITORY:-this repository}${GITHUB_SHA:+ at $GITHUB_SHA}" 2>&1)" \
         || case "$out" in *request_exists* | *"already has open request"*) echo "the open change request from sync now shows this build" >&2 ;; *) echo "$out" >&2; exit 1 ;; esac
     echo "$out"

@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import sync_branch  # noqa: E402
 
 
-def decide(versions: dict, refs: dict) -> str:
+def decide(versions: dict, refs: dict, main_id: str | None = None) -> str:
     """refs は ref 名からバージョン ID、versions は ID から parents"""
 
     def head(_store, name):
@@ -30,10 +30,13 @@ def decide(versions: dict, refs: dict) -> str:
             current = parents[0] if parents else None
         return False
 
+    def read_version(_store, version_id):
+        return V(id=version_id, parents=versions[version_id])
+
     with mock.patch.object(sync_branch.repo, "head", head), mock.patch.object(
         sync_branch.repo, "in_history", in_history
-    ):
-        return sync_branch.decide(None)
+    ), mock.patch.object(sync_branch.repo, "read_version", read_version):
+        return sync_branch.decide(None, main_id)
 
 
 MAIN, SYNC = "refs/heads/main", "refs/heads/sync"
@@ -69,6 +72,28 @@ class DecideTest(unittest.TestCase):
     def test_a_change_after_the_last_merge_asks_for_a_request(self):
         versions = {"a": (), "b": ("a",), "m": ("a", "b"), "h": ("m",), "c": ("b",)}
         self.assertEqual(decide(versions, {MAIN: "h", SYNC: "c"}), "request")
+
+
+class JudgedVersionTest(unittest.TestCase):
+    def test_the_cloned_version_is_judged_not_main_now(self):
+        versions = {"a": (), "b": ("a",), "h": ("a",)}
+        self.assertEqual(decide(versions, {MAIN: "h", SYNC: "b"}, main_id="a"), "auto")
+
+
+class TargetTest(unittest.TestCase):
+    def test_data_queria_io(self):
+        with mock.patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(
+                sync_branch.target("https://data.queria.io/datasets/queria/towns/"),
+                ("https://queria.io", "queria/towns"),
+            )
+
+    def test_another_host_needs_queria_api_url(self):
+        remote = "https://data-stg.queria.io/datasets/queria/towns/"
+        with mock.patch.dict("os.environ", {}, clear=True), self.assertRaises(SystemExit):
+            sync_branch.target(remote)
+        with mock.patch.dict("os.environ", {"QUERIA_API_URL": "https://stg.queria.io"}):
+            self.assertEqual(sync_branch.target(remote), ("https://stg.queria.io", "queria/towns"))
 
 
 if __name__ == "__main__":

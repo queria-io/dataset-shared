@@ -1,6 +1,8 @@
 """Whether the Sync may bring the sync branch into main by itself.
 
-Usage: python sync_branch.py <remote>
+Usage:
+  python sync_branch.py <remote> [<main version>]
+  python sync_branch.py --target <remote>     print the Queria API and <handle>/<name>
 
 The Sync builds on refs/heads/sync, which only ever holds versions built from
 this repository's code. main is where people change the dataset (on Queria's
@@ -14,15 +16,24 @@ screens, or with fdl clone, push and change requests). Prints one of:
 
 from __future__ import annotations
 
+import os
+import re
 import sys
 
 from fdl import repo
 from fdl.stores import open_store
 
+from storage_key import API
 
-def decide(store) -> str:
+
+def decide(store, main_id: str | None = None) -> str:
+    """Judge ``main_id`` (the version a clone of main got), or main as it is now.
+
+    Judging the version the merge will build on keeps a push to main between
+    the judgment and the clone from being merged unseen.
+    """
     sync = repo.head(store, "refs/heads/sync")
-    main = repo.head(store, "refs/heads/main")
+    main = repo.read_version(store, main_id) if main_id else repo.head(store, "refs/heads/main")
     if main is None:
         return "new"
     if sync is None:
@@ -40,5 +51,17 @@ def decide(store) -> str:
     return "request"
 
 
+def target(remote: str) -> tuple[str, str]:
+    """The Queria API that holds ``remote``'s change requests, and its <handle>/<name>."""
+    match = re.fullmatch(r"https://([^/]+)/datasets/([^/]+)/([^/]+)/?", remote)
+    base = match and (os.environ.get("QUERIA_API_URL") or API.get(match[1]))
+    if not base:
+        raise SystemExit(f"{remote}: no Queria API to open a change request on (set QUERIA_API_URL)")
+    return base, f"{match[2]}/{match[3]}"
+
+
 if __name__ == "__main__":
-    print(decide(open_store(sys.argv[1])))
+    if sys.argv[1] == "--target":
+        print(*target(sys.argv[2]))
+    else:
+        print(decide(open_store(sys.argv[1]), *sys.argv[2:3]))
