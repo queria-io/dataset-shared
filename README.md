@@ -41,7 +41,7 @@ macro-paths: ["macros", "shared/macros"]
 
 ## 雛形
 
-- `templates/profiles.yml`: 新しいデータセットの dbt プロファイル。`fdl checkout` が作る作業カタログ（`FDL_WORKING`）の ATTACH と書き込み先（`FDL_DATA_PATH`、`DATA_INLINING_ROW_LIMIT 0` つき）、`QUERIA_USER_AGENT` の受け渡し、公開中のデータファイルをトークン付きで読む plugin（`scripts/fdl_read.py`）まで入っている。既存のリポジトリを写すと古い形が混ざるので、ここから作る
+- `templates/profiles.yml`: 新しいデータセットの dbt プロファイル。`fdl checkout` が作る作業カタログ（`FDL_WORKING`）の ATTACH と書き込み先（`FDL_DATA_PATH`、`DATA_INLINING_ROW_LIMIT 0` つき）、`QUERIA_USER_AGENT` の受け渡し、公開中のデータファイルをトークン付きで読む plugin（`scripts/fdl_read.py`）まで入っている。dbt の外の Python で公開中のカタログを読むときは、ATTACH の前に `fdl_read.statements()` を同じ接続で実行する。既存のリポジトリを写すと古い形が混ざるので、ここから作る
 
 ```bash
 sed 's/DATASET_NAME/<name>/g' shared/templates/profiles.yml > profiles.yml
