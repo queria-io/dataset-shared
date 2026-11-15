@@ -292,6 +292,8 @@ Excel・CSV・PDF・ZIP など、配布元がファイルで配るデータは�
 - 前のバージョンのファイルを読み直すときは、アセットにしたファイルのうち手元に無いものをリポジトリの `assets/<sha256>` から取得し、
   sha256 を確認してから使う。アセットにしていないファイルは URL から取得し直す
 - `source_file` も raw → stg → mart で作る。raw は取得の記録（Parquet）を読む
+- 取得には `shared.fetch.fetch_file` を使う。`source_file` の 1 行（`url`・`sha256`・`bytes`・`media_type`・`retrieved_at`・`etag`・`last_modified`）を返し、
+  前回の行を `previous` に渡すと条件付き GET で変わっていないファイルのダウンロードをスキップする
 - 取得のときに応答の `ETag`・`Last-Modified` も記録する。次の取得で `ETag`・`Last-Modified`・サイズが前回と同じで、
   そのファイルが手元か（アセットなら）リポジトリにあるときだけダウンロードをスキップする。
   `ETag` と `Last-Modified` がどちらも無い応答は比較せずに取得する

@@ -3,6 +3,7 @@
 実行: python -m unittest discover -s tests
 """
 
+import hashlib
 import http.server
 import io
 import sys
@@ -189,6 +190,53 @@ class FetchTest(unittest.TestCase):
             fetch.download(url, path, **FAST)
             self.assertEqual(path.read_bytes(), body)
         self.assertEqual(self.server.hits["/cut.zip"], 2)
+
+
+def _conditional(body, etag):
+    """If-None-Match が etag と同じなら 304、違えば 200 と本文を返す。"""
+
+    def route(handler):
+        if handler.headers.get("If-None-Match") == etag:
+            _send(handler, 304)
+        else:
+            _send(handler, 200, body, {"ETag": etag, "Content-Type": "text/csv; charset=utf-8"})
+
+    return route
+
+
+class FetchFileTest(unittest.TestCase):
+    setUpClass = FetchTest.__dict__["setUpClass"]
+    tearDownClass = FetchTest.__dict__["tearDownClass"]
+    route = FetchTest.route
+
+    def test_records_source_file_row(self):
+        url = self.route("/a.csv", _conditional(b"a,b\n", '"v1"'))
+        with tempfile.TemporaryDirectory() as tmp:
+            row = fetch.fetch_file(url, Path(tmp) / "a.csv", **FAST)
+        self.assertEqual(row["sha256"], hashlib.sha256(b"a,b\n").hexdigest())
+        self.assertEqual(row["bytes"], 4)
+        self.assertEqual(row["media_type"], "text/csv")
+        self.assertEqual(row["etag"], '"v1"')
+        self.assertIsNone(row["last_modified"])
+
+    def test_skips_download_when_unchanged(self):
+        url = self.route("/b.csv", _conditional(b"x\n", '"v1"'))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "b.csv"
+            first = fetch.fetch_file(url, path, **FAST)
+            second = fetch.fetch_file(url, path, previous=first, **FAST)
+        self.assertIs(second, first)
+        self.assertEqual(self.server.hits["/b.csv"], 2)
+
+    def test_downloads_when_file_is_missing(self):
+        url = self.route("/c.csv", _conditional(b"y\n", '"v1"'))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "c.csv"
+            first = fetch.fetch_file(url, path, **FAST)
+            path.unlink()
+            second = fetch.fetch_file(url, path, previous=first, **FAST)
+            self.assertTrue(path.exists())
+        self.assertEqual(second["sha256"], first["sha256"])
 
 
 class ReplacingTest(unittest.TestCase):
