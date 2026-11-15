@@ -272,6 +272,30 @@ Gold にあたる層をデータセット側に持つと、用途の数だけテ
   アンカーが決まらない行はページの URL まで、ページが決まらない行は NULL にする
 - テーブルの説明に、その URL で何が開くかを書く
 
+## 元のファイル
+
+Excel・CSV・PDF・ZIP など、配布元がファイルで配るデータは、取得したファイルの一覧を `source_file` テーブルにして公開し、
+各行に元のファイルの `source_sha256` を持たせる。どの行をどのファイルから、いつ、どこから取得したかを確認できるようにするため。
+列の形は [docs.queria.io/publish/conventions](https://docs.queria.io/publish/conventions#元のファイル) にある。
+
+ファイル本体は、URL から取得し直せるものは保存しない。取得し直すのが難しいもの（API キーが要る・1 件ずつ大量に取る・
+掲載ページから外れる・同じ URL で差し替わる）だけを FDL のアセットとして入れる。再配布を認めていない配布元のファイルは入れない。
+
+- アセットにするファイルは `data/assets/<sha256>.<拡張子>` に置く。アップロードするときのメディアタイプは拡張子から決まる
+- アセットを指す列に `*.table.yml` で `asset: true` を付ける。付けないと `--assets` を渡しても何もアップロードされない。
+  `fdl push` は、`asset: true` の列にリポジトリにも手元にも無い sha256 があると止まる。
+  `source_file` の一部のファイルだけをアセットにするときは `sha256` 列には付けず、アセットにしたファイルの sha256 だけを入れて
+  ほかは NULL にした列（`asset_sha256`）に付ける
+- `scripts/build.sh` で `mkdir -p data/assets` と `export FDL_ASSETS="${FDL_ASSETS:-$PWD/data/assets}"` を書く。
+  `fdl commit --assets` はフォルダが無いと止まるので、アセットにするファイルが無い回もフォルダを作る。
+  `build-fdl.sh` が `fdl commit --assets` に渡し、`fdl push` でリポジトリに無いファイルだけがアップロードされる
+- 前のバージョンのファイルを読み直すときは、アセットにしたファイルのうち手元に無いものをリポジトリの `assets/<sha256>` から取得し、
+  sha256 を確認してから使う。アセットにしていないファイルは URL から取得し直す
+- `source_file` も raw → stg → mart で作る。raw は取得の記録（Parquet）を読む
+- 取得のときに応答の `ETag`・`Last-Modified` も記録する。次の取得で `ETag`・`Last-Modified`・サイズが前回と同じで、
+  そのファイルが手元か（アセットなら）リポジトリにあるときだけダウンロードをスキップする。
+  `ETag` と `Last-Modified` がどちらも無い応答は比較せずに取得する
+
 ## 列名の語彙
 
 列名は一般のデータなら schema.org、日本の公的データなら GIF に揃える。列名は
