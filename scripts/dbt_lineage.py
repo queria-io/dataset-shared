@@ -95,14 +95,15 @@ def _render(text: str, env: Mapping[str, str]) -> str | None:
     return None if unresolved or "{" in rendered else rendered
 
 
-_CATALOG_URL = re.compile(r"(https?://.+?/)(?:versions/[^/]+/)?ducklake\.duckdb")
+_CATALOG_URL = re.compile(r"(https?://.+?/)(?:versions/[^/]+/)?(?:metadata\.db|ducklake\.duckdb)")
 
 
 def _repository(path: str, env: Mapping[str, str]) -> str | None:
     """ATTACH の path から、リポジトリの URL。
 
-    main のカタログ (`ducklake:https://…/ducklake.duckdb`) と、バージョンのカタログ
-    (`ducklake:https://…/versions/<ID>/ducklake.duckdb`) のどちらでもリポジトリの URL にする。
+    main のメタデータ (`ducklake:https://…/metadata.db`) と、バージョンのメタデータ
+    (`ducklake:https://…/versions/<ID>/metadata.db`) のどちらでもリポジトリの URL にする。
+    前の名前 (`ducklake.duckdb`) も同じに扱う。
     """
     rendered = _render(path, env)
     if rendered is None:
