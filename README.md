@@ -274,13 +274,14 @@ Gold にあたる層をデータセット側に持つと、用途の数だけテ
 
 ## 元のファイル
 
-Excel・CSV・PDF・ZIP など、配布元がファイルで配るデータは、取得したファイルを FDL のアセットとして
-バージョンに入れる。どの行をどのファイルから、いつ、どこから取得したかを、配布元でファイルが
-差し替えられたり消えたりした後も確認できるようにするため。一覧のテーブル（`source_file`）の列、
-各行の `source_sha256`、アセットにしないファイルの条件は
-[docs.queria.io/publish/conventions](https://docs.queria.io/publish/conventions#元のファイル) にある。
+Excel・CSV・PDF・ZIP など、配布元がファイルで配るデータは、取得したファイルの一覧を `source_file` テーブルにして公開し、
+各行に元のファイルの `source_sha256` を持たせる。どの行をどのファイルから、いつ、どこから取得したかを確認できるようにするため。
+列の形は [docs.queria.io/publish/conventions](https://docs.queria.io/publish/conventions#元のファイル) にある。
 
-- 取得したファイルは `data/assets/<sha256>.<拡張子>` に置く
+ファイル本体は、URL から取得し直せるものは保存しない。取得し直すのが難しいもの（API キーが要る・1 件ずつ大量に取る・
+掲載ページから外れる・同じ URL で差し替わる）だけを FDL のアセットとして入れる。再配布を認めていない配布元のファイルは入れない。
+
+- アセットにするファイルは `data/assets/<sha256>.<拡張子>` に置く
 - `scripts/build.sh` で `export FDL_ASSETS="${FDL_ASSETS:-$PWD/data/assets}"` とする。
   `build-fdl.sh` が `fdl commit --assets` に渡し、リポジトリに無いファイルだけが上がる
 - 前のバージョンのファイルを読み直すときは、手元に無いものをリポジトリの `assets/<sha256>` から取得し、
