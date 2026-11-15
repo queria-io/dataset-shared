@@ -10,6 +10,7 @@ screens, or with fdl clone, push and change requests). Prints one of:
 
   new      main does not exist yet
   start    main exists and the apply branch does not: start it at main
+  current  main already holds all of apply: nothing to do
   auto     main holds nothing but what earlier builds brought: merge apply into it
   request  main has changes of its own since the last build: open a change request
 """
@@ -57,6 +58,11 @@ def decide(store, main_id: str | None = None) -> str:
         return "new"
     if apply is None:
         return "start"
+    # Nothing new on apply (the build changed nothing): main may hold changes of
+    # its own, but there is nothing to bring in or ask about.
+    base = merge_base(store, main, apply)
+    if base is not None and base.id == apply.id:
+        return "current"
     # main is a merge of a version on apply (a build's merge, or a change request
     # from apply merged on Queria), or main is behind apply. apply only ever grows
     # by first parent, so both walk its first-parent history, which stops at the
