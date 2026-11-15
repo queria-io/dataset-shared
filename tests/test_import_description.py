@@ -5,6 +5,7 @@
 
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -21,6 +22,7 @@ from typer.testing import CliRunner
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 import import_description  # noqa: E402
+import sync_branch  # noqa: E402
 
 runner = CliRunner()
 
@@ -61,6 +63,7 @@ fields:
 class ImportTest(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.addCleanup(os.chdir, os.getcwd())
         self.code = self.tmp / "code"
         (self.code / "models").mkdir(parents=True)
@@ -117,6 +120,26 @@ class ImportTest(unittest.TestCase):
         build(self.remote, self.store, self.code / ".fdl" / "b.sqlite", "SELECT 1", "apply")
         written = import_description.import_description(self.store, self.code)
         self.assertNotIn("README.md", written)
+
+
+    def heads(self):
+        return repo.head(self.store, "refs/heads/main"), repo.head(self.store, "refs/heads/apply")
+
+    def test_settled_once_the_code_holds_the_words_main_changed(self):
+        self.edit_main(lambda f: (f / "README.md").write_text("# Same\n"))
+        self.assertFalse(sync_branch.settled(self.store, *self.heads()))
+        (self.code / "README.md").write_text("# Same\n")
+        build(self.remote, self.store, self.code / ".fdl" / "b.sqlite", "SELECT 1", "apply")
+        self.assertTrue(sync_branch.settled(self.store, *self.heads()))
+
+    def test_not_settled_when_main_changed_rows(self):
+        person = self.tmp / "rows"
+        person.mkdir()
+        os.chdir(person)
+        (person / "dataset.json").write_text('{"name": "towns", "title": "Towns"}')
+        build(self.remote, self.store, person / "p.sqlite", "INSERT INTO lake.main.towns VALUES (2)", "main")
+        os.chdir(self.code)
+        self.assertFalse(sync_branch.settled(self.store, *self.heads()))
 
 
 if __name__ == "__main__":

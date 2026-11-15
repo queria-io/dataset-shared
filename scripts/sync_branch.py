@@ -20,10 +20,29 @@ import os
 import re
 import sys
 
+from fdl import diff as diffs
 from fdl import repo
 from fdl.stores import open_store
 
+from import_description import drift, is_empty, merge_base
 from storage_key import API
+
+
+def settled(store, main, apply) -> bool:
+    """Whether main changed nothing since its merge base with apply that apply lacks.
+
+    So it is when people changed only the description, and the code took the
+    same change (an import pull request merged): no data, and no words apply
+    does not hold.
+    """
+    base = merge_base(store, main, apply)
+    if base is None:
+        return False
+    data = diffs.versions(store, base, main)
+    if any(data["tables"].values()) or data["rows"] or data["columns"] or data["data"]:
+        return False
+    found = drift(store, base, main, apply)
+    return found is not None and is_empty(found)
 
 
 def decide(store, main_id: str | None = None) -> str:
@@ -47,6 +66,8 @@ def decide(store, main_id: str | None = None) -> str:
     if any(repo.in_history(store, merged, apply) for merged in main.parents[1:]):
         return "auto"
     if repo.in_history(store, main.id, apply):
+        return "auto"
+    if settled(store, main, apply):
         return "auto"
     return "request"
 

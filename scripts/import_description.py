@@ -16,23 +16,36 @@ What the build fills in (types, rows, sql, depends_on, catalogs) is not written.
 from __future__ import annotations
 
 import hashlib
+import json
 import sys
 from pathlib import Path
 from typing import Any
 
 from fdl import repo
+from fdl import dataset as datasets
 from fdl import diff as diffs
 from fdl import merge as merging
 from fdl import objects
 from fdl.stores import open_store
-from ruamel.yaml import YAML
 
 FILLED = {"tables", "catalogs", "sql", "depends_on", "rows", "kind", "fields", "type", "nullable"}
 MISSING = object()
 
-yaml = YAML()
-yaml.preserve_quotes = True
-yaml.width = 4096
+
+
+def _yaml():
+    """A round-trip YAML that keeps comments and the repositories' indentation.
+
+    Imported here so that sync_branch.py, which reads only the drift, runs without ruamel.
+    """
+    from ruamel.yaml import YAML
+
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    yaml.width = 4096
+    # The dataset repositories indent list items under their key (`fields:\n  - name:`)
+    yaml.indent(mapping=2, sequence=4, offset=2)
+    return yaml
 
 
 def changed(base: dict, ours: dict, theirs: dict) -> dict[str, Any]:
@@ -86,49 +99,99 @@ def apply_table(record: dict, change: dict) -> None:
         for name, keys in change["fields"].items():
             field = next((f for f in fields if f.get("name") == name), None)
             if field is None:
+                # Removing what the file never held changes nothing.
+                if all(value is MISSING for value in keys.values()):
+                    continue
                 field = {"name": name}
                 fields.append(field)
             apply_keys(field, keys)
 
 
 def table_files(root: Path) -> dict[tuple, Path]:
-    """Each *.table.yml below ``root`` by (schema, name), skipping hidden folders."""
+    """Each table file fdl commit reads below ``root`` by (schema, name), skipping hidden folders."""
     found = {}
-    for path in sorted(root.rglob("*.table.yml")):
+    paths = (path for pattern in datasets.TABLE_FILES for path in root.rglob(pattern))
+    for path in sorted(paths):
         if any(part.startswith(".") for part in path.relative_to(root).parts[:-1]):
             continue
-        record = yaml.load(path.read_text(encoding="utf-8")) or {}
+        record = _yaml().load(path.read_text(encoding="utf-8")) or {}
         found[(record.get("schema"), record.get("name"))] = path
     return found
 
 
 def write_yaml(path: Path, record: Any) -> None:
+    if path.suffix == ".json":
+        path.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return
     with path.open("w", encoding="utf-8") as fh:
-        yaml.dump(record, fh)
+        _yaml().dump(record, fh)
+
+
+def sha(entry: dict | None) -> str | None:
+    return entry["sha256"] if entry else None
+
+
+def merge_base(store, main, apply):
+    """The latest apply version main holds: main itself, or one a merge in its history took.
+
+    apply only grows by first parent, and main reaches it through its own
+    first parents and the merges that took apply in, so this walks main back
+    only past the changes made since, not the whole history.
+    """
+    version = main
+    while version is not None:
+        if repo.in_history(store, version.id, apply):
+            return version
+        for merged in version.parents[1:]:
+            if repo.in_history(store, merged, apply):
+                return repo.read_version(store, merged)
+        version = repo.read_version(store, version.parents[0]) if version.parents else None
+    return None
+
+
+def drift(store, base, main, apply) -> dict | None:
+    """The description main changed since ``base`` that apply does not hold.
+
+    ``keys`` are the dataset's, ``tables`` each table's (see table_changes),
+    ``tree`` the paths of tree.json with main's entry (None: removed).
+    None when a version has no dataset.json to compare.
+    """
+    described = [merging.declared(diffs.described(store, v)) for v in (base, main, apply)]
+    if any(d is merging.MISSING for d in described):
+        return None
+    trees = [
+        {e["path"]: e for e in (diffs.listed(store, v) or {}).get("entries", [])}
+        for v in (base, main, apply)
+    ]
+    tree = {}
+    for path in sorted(set(trees[0]) | set(trees[1])):
+        old, ours, theirs = (t.get(path) for t in trees)
+        if sha(ours) != sha(old) and sha(ours) != sha(theirs):
+            tree[path] = ours
+    return {"keys": changed(*described), "tables": table_changes(*described), "tree": tree}
+
+
+def is_empty(found: dict) -> bool:
+    return not (found["keys"] or found["tables"] or found["tree"])
 
 
 def import_description(store, root: Path) -> list[str]:
     main = repo.head(store, "refs/heads/main")
     apply = repo.head(store, "refs/heads/apply")
-    if main is None or apply is None:
+    base = merge_base(store, main, apply) if main and apply else None
+    found = drift(store, base, main, apply) if base else None
+    if found is None or is_empty(found):
         return []
-    bases = repo.merge_bases(store, main, apply)
-    if len(bases) != 1:
-        return []
-    base = bases[0]
-    described = [merging.declared(diffs.described(store, v)) for v in (base, main, apply)]
-    if any(d is merging.MISSING for d in described):
-        return []
+    yaml = _yaml()
     written: list[str] = []
 
     dataset_path = root / "dataset.yml"
     dataset = yaml.load(dataset_path.read_text(encoding="utf-8"))
-    keys = changed(*described)
-    tables = table_changes(*described)
+    keys = found["keys"]
     files = table_files(root)
     inline = by_key(dataset.get("tables", []) or [], "schema", "name")
     dataset_changed = bool(keys)
-    for (schema, name), change in tables.items():
+    for (schema, name), change in found["tables"].items():
         if (schema, name) in files:
             path = files[(schema, name)]
             record = yaml.load(path.read_text(encoding="utf-8"))
@@ -151,15 +214,7 @@ def import_description(store, root: Path) -> list[str]:
         write_yaml(dataset_path, dataset)
         written.insert(0, "dataset.yml")
 
-    trees = [
-        {e["path"]: e for e in (diffs.listed(store, v) or {}).get("entries", [])}
-        for v in (base, main, apply)
-    ]
-    for path in sorted(set(trees[0]) | set(trees[1])):
-        old, ours, theirs = (t.get(path) for t in trees)
-        sha = lambda entry: entry and entry["sha256"]  # noqa: E731
-        if sha(ours) == sha(old) or sha(ours) == sha(theirs):
-            continue
+    for path, ours in found["tree"].items():
         local = root / objects.check_path(path)
         if ours is None:
             local.unlink(missing_ok=True)

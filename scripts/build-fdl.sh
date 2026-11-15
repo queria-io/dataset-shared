@@ -199,10 +199,11 @@ if [ -n "$request" ]; then
     echo "$out"
 fi
 
-# The description people changed on Queria goes back into this code as a pull
-# request, so the code follows main (scripts/import_description.py). Only in
-# GitHub Actions, with `contents: write` and `pull-requests: write`; the version
-# is already published, so a refusal here only warns.
+# The description people changed on Queria is written into this checkout, so
+# that the workflow's next step can bring it back as a pull request and the code
+# follows main (scripts/import_description.py, scripts/import-pr.sh). Only in
+# GitHub Actions; the version is already published, so a failure here only warns.
 if [ -n "${GITHUB_ACTIONS:-}" ]; then
-    "$(dirname "$0")/import-pr.sh" "$remote" || echo "warning: could not open the pull request that brings Queria's description back" >&2
+    uv run --with ruamel.yaml python "$(dirname "$0")/import_description.py" "$remote" >"${RUNNER_TEMP:?}/queria-import.txt" \
+        || echo "warning: could not read the description changed on Queria" >&2
 fi
