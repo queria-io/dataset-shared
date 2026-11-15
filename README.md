@@ -25,7 +25,7 @@ scripts/build.sh
 
 `scripts/build-fdl.sh` は、Queria のトークン（下の「Queria のトークン」）があれば Queria にデータセットのデータファイルの置き場（`fdl.json` の `data_dir`）だけに書ける鍵（削除はできない）を頼みます（`scripts/storage_key.py`）。鍵が出れば `fdl clone --storage` で、ビルドは新しいデータファイルを R2 に直接書きます。手元にファイルを置かないので、ディスクの小さいマシンでも大きいデータセットを作れます。鍵の有効期限は数分です。DuckDB の永続 secret を `PROVIDER credential_chain`（`REFRESH auto`）で作るので、期限が切れてストレージに断られると、DuckDB が `storage_key.py credential-process` で新しい鍵を取り直して続けます。鍵の値は環境変数にもログにも出ません。secret と AWS の設定ファイルは、ビルドが終わると消します。
 
-鍵が出ないとき（トークンが無い、Queria が断った、fdl が古い）や `FDL_DIRECT=0` のときは、これまでどおり手元のフォルダに書いてコミットでアップロードします。
+鍵が出ないとき（トークンが無い、Queria が断った）や `FDL_DIRECT=0` のときは、これまでどおり手元のフォルダに書いてコミットでアップロードします。
 
 ## 提供マクロ
 
