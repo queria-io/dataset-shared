@@ -39,6 +39,10 @@ fi
 remote="${FDL_REMOTE:-https://data.queria.io/datasets/queria/$name/}"
 work=".fdl/work.sqlite"
 
+# fdl is in beta: build with the latest, as the Sync does, so that a build on this
+# machine makes and profiles the version like the Sync even when uv.lock is old.
+uv lock --quiet --upgrade-package fdl-cli
+
 # In a GitHub Actions job that may ask for an OIDC token (`permissions: id-token:
 # write`), fdl and the storage key take an hour's token from Queria whenever they
 # need one (scripts/queria_token.py), so FDL_TOKEN is not used. If Queria does not
