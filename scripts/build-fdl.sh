@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Build a dataset with fdl: check out the published version, build on it, and
-# commit a new version back to Queria. Called from each dataset's scripts/build.sh.
+# Build a dataset with fdl: clone the sync branch, build on it, push a new
+# version to it, and bring it into main. Called from each dataset's scripts/build.sh.
 # `queria validate` runs between the build and the commit, so a failed check
 # makes no version.
 #
@@ -10,9 +10,14 @@
 #
 # The build reads and writes the working catalog fdl checks out: FDL_WORKING is
 # its path and FDL_DATA_PATH the folder new data files go to (profiles.yml
-# attaches both). fdl commit freezes it into a version described by dataset.yml;
-# fdl push uploads the new files and moves main; Queria publishes it. An fdl
-# without push still does both in commit.
+# attaches both). fdl commit freezes it into a version described by dataset.yml,
+# and fdl push uploads it to refs/heads/sync.
+#
+# refs/heads/sync holds only versions built from this code. main is where people
+# change the dataset on Queria (its screens, fdl clone and push, change requests).
+# When main holds nothing but what earlier builds brought, sync is merged into
+# main here (scripts/sync_branch.py). When people changed main since, a change
+# request from sync is opened instead, so nobody's change is merged unseen.
 #
 # Environment:
 #   FDL_TOKEN    a Queria API token that may write the dataset (or `queria login`, which lets fdl ask queria for it).
@@ -93,9 +98,13 @@ else:
 PY
 }
 
-# Every build starts from what is published now, so a version is built on main.
+# Every build starts from the last build, on the sync branch. Before the first,
+# the branch starts where main is.
 rm -rf .fdl
-uv run fdl clone "$remote" "$work" ${storage[@]+"${storage[@]}"}
+if [ "$(uv run python "$(dirname "$0")/sync_branch.py" "$remote")" = start ]; then
+    uv run fdl branch "$remote" sync refs/heads/main >/dev/null
+fi
+uv run fdl clone "$remote" "$work" --branch sync ${storage[@]+"${storage[@]}"}
 FDL_DATA_PATH="$(data_path)"
 # Queria's key reaches the data files alone (FDL_STORAGE_DATA). If they are
 # somewhere else, the key cannot write them: build through a local folder.
@@ -106,7 +115,7 @@ if [ -n "${storage[*]+x}" ] && [ "$FDL_DATA_PATH" != "${FDL_STORAGE_DATA:-}" ]; 
     unset FDL_STORAGE FDL_STORAGE_DATA FDL_STORAGE_SECRET AWS_CONFIG_FILE
     storage=()
     rm -rf .fdl
-    uv run fdl clone "$remote" "$work"
+    uv run fdl clone "$remote" "$work" --branch sync
     FDL_DATA_PATH="$(data_path)"
 fi
 export FDL_WORKING="$PWD/$work"
@@ -140,6 +149,32 @@ fi
 
 author="${FDL_AUTHOR:-$(git config user.name || echo build)}"
 uv run fdl commit "$work" -m "${FDL_MESSAGE:-build}" --author "$author" ${describe[@]+"${describe[@]}"} ${FDL_ASSETS:+--assets "$FDL_ASSETS"}
-if uv run fdl push --help >/dev/null 2>&1; then
-    uv run fdl push "$work"
+uv run fdl push "$work"
+
+# Bring sync into main, or ask people to.
+case "$(uv run python "$(dirname "$0")/sync_branch.py" "$remote")" in
+new)
+    uv run fdl branch "$remote" main refs/heads/sync
+    ;;
+auto)
+    main=".fdl/main.sqlite"
+    uv run fdl clone "$remote" "$main" >/dev/null
+    if uv run fdl merge refs/heads/sync "$main" --author "$author" -m "Merge sync" && uv run fdl push "$main"; then
+        exit 0
+    fi
+    echo "sync could not be merged into main: opening a change request" >&2
+    request=1
+    ;;
+request)
+    echo "main has changes of its own since the last build: opening a change request" >&2
+    request=1
+    ;;
+esac
+if [ -n "${request:-}" ]; then
+    slug="$(printf '%s' "$remote" | sed -E 's#^.*/datasets/([^/]+)/([^/]+)/?$#\1/\2#')"
+    out="$(QUERIA_TOKEN="$(uv run python "$(dirname "$0")/queria_token.py")" \
+        uvx queria@latest dataset request create "$slug" --branch sync \
+        --title "${FDL_MESSAGE:-build}" --body "Built from ${GITHUB_REPOSITORY:-this repository}${GITHUB_SHA:+ at $GITHUB_SHA}" 2>&1)" \
+        || case "$out" in *request_exists*) echo "the open change request from sync now shows this build" >&2 ;; *) echo "$out" >&2; exit 1 ;; esac
+    echo "$out"
 fi

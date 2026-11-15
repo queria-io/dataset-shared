@@ -49,7 +49,7 @@ sed 's/DATASET_NAME/<name>/g' shared/templates/profiles.yml > profiles.yml
 
 ## 提供スクリプト
 
-- `scripts/build-fdl.sh`: `fdl clone` → ビルド → `fdl commit` を回す。ビルドが dbt の `target/manifest.json` を書いたときは、モデルの SQL（`sql`）と、profiles.yml が読むだけで ATTACH する公開データセットのエイリアス（`catalogs`）を記述に追加してから commit する（`scripts/dbt_lineage.py`）。依存先（`depends_on`）は fdl commit が SQL から作る。記述に書いた値が優先される
+- `scripts/build-fdl.sh`: `refs/heads/sync` ブランチで `fdl clone` → ビルド → `fdl commit` → `fdl push` を回し、sync を main に取り込む。sync ブランチにはこのコードから作ったバージョンだけが積まれる。main に前回のビルドより後の人の変更（Queria の画面、`fdl clone` と `fdl push`、変更リクエストのマージ）が無ければ `fdl merge` して main を進め、あれば sync からの変更リクエストを作って人が確認するまで main を変えない（`scripts/sync_branch.py`）。merge が衝突したときや main に push できないとき（承認必須のデータセット）も変更リクエストにする。ビルドが dbt の `target/manifest.json` を書いたときは、モデルの SQL（`sql`）と、profiles.yml が読むだけで ATTACH する公開データセットのエイリアス（`catalogs`）を記述に追加してから commit する（`scripts/dbt_lineage.py`）。依存先（`depends_on`）は fdl commit が SQL から作る。記述に書いた値が優先される
 
 ## 取得の共通部品
 
