@@ -5,8 +5,9 @@ Usage:
   python sync_branch.py --target <remote>     print the Queria API and <handle>/<name>
 
 The build runs on refs/heads/apply, which only ever holds versions built from
-this repository's code. main is where people change the dataset (on Queria's
-screens, or with fdl clone, push and change requests). Prints one of:
+this repository's code. main is where people change the dataset's descriptions
+(on Queria's screens, or with fdl clone, push and change requests); Queria does
+not let people change its rows. Prints one of:
 
   new      main does not exist yet
   start    main exists and the apply branch does not: start it at main
