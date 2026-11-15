@@ -1,4 +1,4 @@
-name: Sync (reusable)
+name: Apply (reusable)
 
 on:
   workflow_call:
@@ -76,10 +76,10 @@ jobs:
     # 6 時間ぶん走り切ってから打ち切られ、そのあいだ同じ concurrency group の
     # Checkpoint も止まる
     timeout-minutes: ${{ inputs.timeout_minutes }}
-    # Sync と Checkpoint はどちらもカタログに push する。並行して走ると、後から
+    # Apply と Checkpoint はどちらもカタログに push する。並行して走ると、後から
     # push した側が先の push の最中にカタログを変えてしまい、先の側が
     # "The dataset changed while this push was running" で落ちる。呼び出し側の
-    # workflow レベル concurrency は Sync と Checkpoint をまたがないので、この
+    # workflow レベル concurrency は Apply と Checkpoint をまたがないので、この
     # 2 つの job を同じ group に入れて直列化する。
     #
     # ここで直列化できるのは reusable を経由する job だけ。カタログに push する
@@ -92,7 +92,7 @@ jobs:
       cancel-in-progress: false
       # 既定の queue: single は pending を 1 つしか持てず、後から来た run が
       # 待っている run を蹴る。Checkpoint の cron は呼び出し側にあり週次か月次
-      # なので、Sync の列に埋もれて二度と走らなくなる。待てる数を増やす
+      # なので、Apply の列に埋もれて二度と走らなくなる。待てる数を増やす
       queue: max
     env:
       PYTHONUNBUFFERED: "1"
@@ -116,6 +116,9 @@ jobs:
       - uses: actions/checkout@v5
         with:
           submodules: true
+          # The build runs the dataset's code and the newest queria and fdl-cli:
+          # leave no token in .git/config for them. scripts/import-pr.sh pushes with its own
+          persist-credentials: false
 
       - uses: astral-sh/setup-uv@v7
         with:
@@ -136,6 +139,15 @@ jobs:
 
       - name: Build and push
         run: scripts/build.sh
+
+      # The description changed on Queria, which the build wrote into the checkout,
+      # goes back as a pull request. Only this step holds a token that can push;
+      # without contents and pull-requests: write from the caller it fails alone.
+      - name: Open the pull request for the description changed on Queria
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: shared/scripts/import-pr.sh "$RUNNER_TEMP/queria-import.txt"
 
   notify-failure:
     runs-on: ubuntu-latest
@@ -161,9 +173,9 @@ jobs:
           # 打ち切りと失敗はどちらもここに来る。どちらだったかは題と Result に出す。
           # 打ち切りは取得元が応答を返さなくなったことを、失敗はビルドが落ちたことを指す
           if [ "$RESULT" = cancelled ]; then
-            TITLE="Sync Timed Out"
+            TITLE="Apply Timed Out"
           else
-            TITLE="Sync Failed"
+            TITLE="Apply Failed"
           fi
           curl -s -H "Content-Type: application/json" \
             -d "{\"embeds\": [{\"title\": \"$TITLE\", \"url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\", \"color\": 15158332, \"fields\": [{\"name\": \"Repository\", \"value\": \"${{ github.repository }}\"}, {\"name\": \"Branch\", \"value\": \"${{ github.ref_name }}\"}, {\"name\": \"Commit\", \"value\": \"${{ github.sha }}\"}, {\"name\": \"Result\", \"value\": \"$RESULT\"}]}]}" \

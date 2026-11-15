@@ -49,7 +49,7 @@ sed 's/DATASET_NAME/<name>/g' shared/templates/profiles.yml > profiles.yml
 
 ## 提供スクリプト
 
-- `scripts/build-fdl.sh`: `fdl clone` → ビルド → `fdl commit` を回す。ビルドが dbt の `target/manifest.json` を書いたときは、モデルの SQL（`sql`）と、profiles.yml が読むだけで ATTACH する公開データセットのエイリアス（`catalogs`）を記述に追加してから commit する（`scripts/dbt_lineage.py`）。依存先（`depends_on`）は fdl commit が SQL から作る。記述に書いた値が優先される
+- `scripts/build-fdl.sh`: `refs/heads/apply` ブランチで `fdl clone` → ビルド → `fdl commit` → `fdl push` を回し、apply を main に取り込む。apply ブランチにはこのコードから作ったバージョンだけが積まれる。main に前回のビルドより後の人の変更（Queria の画面、`fdl clone` と `fdl push`、変更リクエストのマージ）が無ければ `fdl merge` して main を進め、あれば apply からの変更リクエストを作って人が確認するまで main を変えない（`scripts/sync_branch.py`）。merge が衝突したときや main に push できないとき（承認必須のデータセット）も変更リクエストにする。ビルドが dbt の `target/manifest.json` を書いたときは、モデルの SQL（`sql`）と、profiles.yml が読むだけで ATTACH する公開データセットのエイリアス（`catalogs`）を記述に追加してから commit する（`scripts/dbt_lineage.py`）。依存先（`depends_on`）は fdl commit が SQL から作る。記述に書いた値が優先される
 
 ## 取得の共通部品
 
@@ -119,20 +119,25 @@ git commit -m "chore: dataset-shared を更新する"
 
 ## Queria のトークン（fdl のデータセット）
 
-GitHub Actions のジョブに `id-token: write` があると、`scripts/build-fdl.sh` はリポジトリのシークレットを使わず、ジョブの OIDC トークンを Queria で 1 時間の API トークンに交換して書きます（`scripts/queria_token.py`）。fdl は credential helper として、`storage_key.py` は鍵を頼む前に、トークンが要るたびにこれを呼びます。残りが 10 分を切ると交換し直すので、1 時間を超えるビルドも止まりません。交換できるのは Queria に登録したリポジトリ・ワークフロー・ブランチ（dataset-shared の Sync を呼ぶ、各リポの main のジョブ）だけです。ワークフローを SHA で固定した呼び出しも、パスが同じなら交換できます。どの SHA を動かすかは各リポの main が決めるので、固定を上げる PR では dataset-shared の差分を確認します。
+GitHub Actions のジョブに `id-token: write` があると、`scripts/build-fdl.sh` はリポジトリのシークレットを使わず、ジョブの OIDC トークンを Queria で 1 時間の API トークンに交換して書きます（`scripts/queria_token.py`）。fdl は credential helper として、`storage_key.py` は鍵を頼む前に、トークンが要るたびにこれを呼びます。残りが 10 分を切ると交換し直すので、1 時間を超えるビルドも止まりません。交換できるのは Queria に登録したリポジトリ・ワークフロー・ブランチ（dataset-shared の Apply を呼ぶ、各リポの main のジョブ）だけです。ワークフローを SHA で固定した呼び出しも、パスが同じなら交換できます。どの SHA を動かすかは各リポの main が決めるので、固定を上げる PR では dataset-shared の差分を確認します。
 
-呼び出し側の Sync に `permissions` を書きます。Queria のトークンはシークレットで渡しません。Queria が交換を断ったときは、ビルドが止まります。
+呼び出し側の Apply に `permissions` を書きます。Queria のトークンはシークレットで渡しません。Queria が交換を断ったときは、ビルドが止まります。
 
 ```yaml
+name: Apply
+
 jobs:
   sync:
     permissions:
-      contents: read
+      contents: write
+      pull-requests: write
       id-token: write
     uses: queria-io/dataset-shared/.github/workflows/sync.yml@<shared の SHA>
     secrets:
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 ```
+
+`contents: write` と `pull-requests: write` は、Queria で変更された説明をこのリポジトリに戻す PR に使います。`scripts/build-fdl.sh` の最後に `scripts/import_description.py` が、main の説明のうち人が変えてこのコードに無いものを dataset.yml・*.table.yml・README.md・docs/ に書き、ワークフローの次のステップで `scripts/import-pr.sh` が `queria/import-description` ブランチから PR を出します（開いていれば更新、内容が同じなら何もしない）。書き込める GITHUB_TOKEN を持つのはこのステップだけで、checkout は認証情報を残しません。マージすると次のビルドが同じ説明を書くので、main とコードの差が無くなります。権限が無いときや、組織の設定で GitHub Actions に PR の作成を許していないときは、警告を出すだけでビルドは成功のままです。
 
 Queria の照合は、SHA で固定したワークフローもパスが登録と同じなら通す。
 
@@ -146,7 +151,7 @@ Queria の照合は、SHA で固定したワークフローもパスが登録と
 `uses: queria-io/dataset-shared/.github/workflows/sync.yml@<SHA>` で呼ぶ。SHA は submodule と同じコミットで、
 `shared/scripts/pin-shared.sh` が両方を上げる。
 
-Sync を打ち切るまでの分数は `timeout_minutes` で決まる。既定は 90 分で、数えるのは
+Apply を打ち切るまでの分数は `timeout_minutes` で決まる。既定は 90 分で、数えるのは
 job が走り出してからの時間（`concurrency` の待ち時間は入らない）。これを超える
 データセットは自分の実測値を呼び出し側から渡す。
 
@@ -181,7 +186,7 @@ fdl で上げるデータセットは、新しいデータファイルを手元�
 （.NET・Android SDK・GHC・CodeQL）を消して空ける。前後の空きはログに出る。
 
 月次は全件、日次は差分のように、同じデータセットをモードを変えて作るリポは、日次のワークフローからも
-共通の Sync を呼び、`mode` を渡す。値は `SYNC_MODE` としてビルドに渡り、意味は各リポの `main.py` が決める。
+共通の Apply を呼び、`mode` を渡す。値は `SYNC_MODE` としてビルドに渡り、意味は各リポの `main.py` が決める。
 
 ```yaml
 jobs:

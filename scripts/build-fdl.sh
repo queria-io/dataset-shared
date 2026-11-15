@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Build a dataset with fdl: check out the published version, build on it, and
-# commit a new version back to Queria. Called from each dataset's scripts/build.sh.
+# Build a dataset with fdl: clone the apply branch, build on it, push a new
+# version to it, and bring it into main. Called from each dataset's scripts/build.sh.
 # `queria validate` runs between the build and the commit, so a failed check
 # makes no version.
 #
@@ -10,9 +10,14 @@
 #
 # The build reads and writes the working catalog fdl checks out: FDL_WORKING is
 # its path and FDL_DATA_PATH the folder new data files go to (profiles.yml
-# attaches both). fdl commit freezes it into a version described by dataset.yml;
-# fdl push uploads the new files and moves main; Queria publishes it. An fdl
-# without push still does both in commit.
+# attaches both). fdl commit freezes it into a version described by dataset.yml,
+# and fdl push uploads it to refs/heads/apply.
+#
+# refs/heads/apply holds only versions built from this code. main is where people
+# change the dataset on Queria (its screens, fdl clone and push, change requests).
+# When main holds nothing but what earlier builds brought, apply is merged into
+# main here (scripts/sync_branch.py). When people changed main since, a change
+# request from apply is opened instead, so nobody's change is merged unseen.
 #
 # Environment:
 #   FDL_TOKEN    a Queria API token that may write the dataset (or `queria login`, which lets fdl ask queria for it).
@@ -39,8 +44,8 @@ fi
 remote="${FDL_REMOTE:-https://data.queria.io/datasets/queria/$name/}"
 work=".fdl/work.sqlite"
 
-# fdl is in beta: build with the latest, as the Sync does, so that a build on this
-# machine makes and profiles the version like the Sync even when uv.lock is old.
+# fdl is in beta: build with the latest, as the Apply workflow does, so that a build on this
+# machine makes and profiles the version like the Apply workflow even when uv.lock is old.
 uv lock --quiet --upgrade-package fdl-cli
 
 # In a GitHub Actions job that may ask for an OIDC token (`permissions: id-token:
@@ -93,9 +98,16 @@ else:
 PY
 }
 
-# Every build starts from what is published now, so a version is built on main.
+# Every build starts from the last build, on the apply branch. Before the first,
+# the branch starts where main is.
 rm -rf .fdl
-uv run fdl clone "$remote" "$work" ${storage[@]+"${storage[@]}"}
+# Assigned first, so that set -e stops the build when the decision cannot be
+# read: cloning an apply branch that was never started would build from nothing.
+decision="$(uv run python "$(dirname "$0")/sync_branch.py" "$remote")"
+if [ "$decision" = start ]; then
+    uv run fdl branch "$remote" apply refs/heads/main >/dev/null
+fi
+uv run fdl clone "$remote" "$work" --branch apply ${storage[@]+"${storage[@]}"}
 FDL_DATA_PATH="$(data_path)"
 # Queria's key reaches the data files alone (FDL_STORAGE_DATA). If they are
 # somewhere else, the key cannot write them: build through a local folder.
@@ -106,7 +118,7 @@ if [ -n "${storage[*]+x}" ] && [ "$FDL_DATA_PATH" != "${FDL_STORAGE_DATA:-}" ]; 
     unset FDL_STORAGE FDL_STORAGE_DATA FDL_STORAGE_SECRET AWS_CONFIG_FILE
     storage=()
     rm -rf .fdl
-    uv run fdl clone "$remote" "$work"
+    uv run fdl clone "$remote" "$work" --branch apply
     FDL_DATA_PATH="$(data_path)"
 fi
 export FDL_WORKING="$PWD/$work"
@@ -140,6 +152,58 @@ fi
 
 author="${FDL_AUTHOR:-$(git config user.name || echo build)}"
 uv run fdl commit "$work" -m "${FDL_MESSAGE:-build}" --author "$author" ${describe[@]+"${describe[@]}"} ${FDL_ASSETS:+--assets "$FDL_ASSETS"}
-if uv run fdl push --help >/dev/null 2>&1; then
-    uv run fdl push "$work"
+uv run fdl push "$work"
+
+# Bring apply into main, or ask people to. main is judged at the version its
+# clone got, so a push to main in between is not merged unseen; a push after the
+# clone makes the push below fail, which opens a change request.
+main=".fdl/main.sqlite"
+decision="$(uv run python "$(dirname "$0")/sync_branch.py" "$remote")"
+if [ "$decision" != new ]; then
+    uv run fdl clone "$remote" "$main" >/dev/null
+    base="$(uv run python -c 'import json, sys; print(json.load(open(sys.argv[1]))["base"])' "$main.fdl.json")"
+    decision="$(uv run python "$(dirname "$0")/sync_branch.py" "$remote" "$base")"
+fi
+request=
+case "$decision" in
+new)
+    uv run fdl branch "$remote" main refs/heads/apply
+    ;;
+auto)
+    if ! { uv run fdl merge refs/heads/apply "$main" --author "$author" -m "Merge apply" && uv run fdl push "$main"; }; then
+        echo "apply could not be merged into main: opening a change request" >&2
+        request=1
+    fi
+    ;;
+request)
+    echo "main has changes of its own since the last build: opening a change request" >&2
+    request=1
+    ;;
+*)
+    echo "sync_branch.py answered ${decision:-nothing}: main is left as it is" >&2
+    exit 1
+    ;;
+esac
+if [ -n "$request" ]; then
+    target="$(uv run python "$(dirname "$0")/sync_branch.py" --target "$remote")"
+    read -r api slug <<<"$target"
+    # An empty QUERIA_TOKEN asks queria for anonymous access, so set it only when
+    # there is a token; otherwise queria uses its own login.
+    if token="$(uv run python "$(dirname "$0")/queria_token.py")"; then
+        export QUERIA_TOKEN="$token"
+    fi
+    # queria prints the server's message ("apply already has open request #N"), not its code.
+    out="$(QUERIA_API_URL="$api" uvx queria@latest dataset request create "$slug" --branch apply \
+        --title "${FDL_MESSAGE:-build}" --body "Built from ${GITHUB_REPOSITORY:-this repository}${GITHUB_SHA:+ at $GITHUB_SHA}" 2>&1)" \
+        || case "$out" in *request_exists* | *"already has open request"*) echo "the open change request from apply now shows this build" >&2 ;; *) echo "$out" >&2; exit 1 ;; esac
+    echo "$out"
+fi
+
+# The description people changed on Queria is written into this checkout, so
+# that the workflow's next step can bring it back as a pull request and the code
+# follows main (scripts/import_description.py, scripts/import-pr.sh). Only in
+# GitHub Actions; the version is already published, so a failure here only warns.
+if [ -n "${GITHUB_ACTIONS:-}" ]; then
+    uv run --with ruamel.yaml python "$(dirname "$0")/import_description.py" "$remote" >"${RUNNER_TEMP:?}/queria-import.txt" \
+        || echo "warning: could not read the description changed on Queria" >&2
 fi
