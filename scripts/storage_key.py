@@ -9,10 +9,11 @@ Usage:
                                                      saved in <first> once, if given)
   python storage_key.py drop                         delete that secret and its AWS config
 
-Queria gives a key to the dataset's `data/` only (it reads and writes, and cannot
-delete), and like any of its keys it lasts minutes. With it, `fdl checkout
---storage` has the build write new data files straight to the repository, so
-nothing is kept on this machine until the commit.
+Queria gives a key to the dataset's data files only (the data_dir in its
+fdl.json; it reads and writes, and cannot delete), and like any of its keys it
+lasts minutes. With it, `fdl checkout --storage` has the build write new data
+files straight to the repository, so nothing is kept on this machine until the
+commit.
 
 The build never holds the key itself. `issue` writes an AWS config whose profile
 runs `credential-process`, and saves a persistent DuckDB secret that gets its key
@@ -87,19 +88,22 @@ def request(url: str, token: str) -> dict:
 
 
 def storage_of(answer: dict) -> dict[str, str]:
-    """Where the key reaches, checked to be the dataset's data/ alone."""
+    """Where the key reaches, checked to be a folder inside the dataset, not all of it."""
     storage = answer["QueriaStorage"]
     if storage.get("mode") != "s3":
         raise ValueError(f"unknown upload mode {storage.get('mode')!r}")
     # A Queria that does not know scope "data" answers with its key for the
     # whole dataset, which can delete.
-    if storage.get("prefix") != f"{storage['base_prefix']}data/":
-        raise ValueError("Queria gave no key for data/ alone")
+    prefix = storage.get("prefix") or ""
+    folders = prefix.removeprefix(storage["base_prefix"]).split("/")[:-1]
+    if not (prefix.startswith(storage["base_prefix"]) and prefix.endswith("/") and folders
+            and all(folder not in ("", ".", "..") for folder in folders)):
+        raise ValueError("Queria gave no key for the data files alone")
     return {
         "endpoint": storage["endpoint"],
         "region": storage.get("region") or "auto",
         "root": f"s3://{storage['bucket']}/{storage['base_prefix']}",
-        # The key reaches data/ alone, so the secret is used there alone: a 403
+        # The key reaches the data files alone, so the secret is used there alone: a 403
         # elsewhere would only make DuckDB take a new key that is refused again.
         "data": f"s3://{storage['bucket']}/{storage['prefix']}",
     }
@@ -237,6 +241,7 @@ def issue(remote: str) -> int:
     for key, value in {
         "AWS_CONFIG_FILE": str(config),
         "FDL_STORAGE": storage["root"],
+        "FDL_STORAGE_DATA": storage["data"],
         "FDL_STORAGE_SECRET": name,
     }.items():
         print(f"export {key}={shlex.quote(value)}")

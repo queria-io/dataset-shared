@@ -55,10 +55,11 @@ if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
 fi
 
 # New data files go straight to the dataset's storage when Queria gives a key to
-# its data/ (write and read, no delete): nothing stays on this machine, so a small
-# disk can build a large dataset. The key lasts minutes; DuckDB takes a new one
-# whenever storage refuses the old (scripts/storage_key.py). Without one, checkout
-# keeps new files in a local folder that the commit uploads.
+# its data files (the data_dir in fdl.json; write and read, no delete): nothing
+# stays on this machine, so a small disk can build a large dataset. The key lasts
+# minutes; DuckDB takes a new one whenever storage refuses the old
+# (scripts/storage_key.py). Without one, checkout keeps new files in a local
+# folder that the commit uploads.
 storage=()
 # (An fdl older than checkout --storage keeps the local folder.) The help is read
 # without colors: on GitHub Actions typer colors it, which splits "--storage".
@@ -100,13 +101,13 @@ PY
 rm -rf .fdl
 uv run fdl checkout "$remote" "$work" ${storage[@]+"${storage[@]}"}
 FDL_DATA_PATH="$(data_path)"
-# Queria's key reaches data/ alone. A repository that keeps its data files
-# elsewhere (data_dir from before data/) builds through a local folder.
-if [ -n "${storage[*]+x}" ] && [ "$FDL_DATA_PATH" != "${FDL_STORAGE%/}/data/" ]; then
-    echo "storage key: not used (data files are in $FDL_DATA_PATH, the key reaches data/ alone); building through a local folder" >&2
+# Queria's key reaches the data files alone (FDL_STORAGE_DATA). If they are
+# somewhere else, the key cannot write them: build through a local folder.
+if [ -n "${storage[*]+x}" ] && [ "$FDL_DATA_PATH" != "${FDL_STORAGE_DATA:-}" ]; then
+    echo "storage key: not used (data files are in $FDL_DATA_PATH, the key reaches ${FDL_STORAGE_DATA:-nothing}); building through a local folder" >&2
     uv run python "$(dirname "$0")/storage_key.py" drop || true
     trap - EXIT
-    unset FDL_STORAGE FDL_STORAGE_SECRET AWS_CONFIG_FILE
+    unset FDL_STORAGE FDL_STORAGE_DATA FDL_STORAGE_SECRET AWS_CONFIG_FILE
     storage=()
     rm -rf .fdl
     uv run fdl checkout "$remote" "$work"
