@@ -14,10 +14,13 @@
 # and fdl push uploads it to refs/heads/apply.
 #
 # refs/heads/apply holds only versions built from this code. main is where people
-# change the dataset on Queria (its screens, fdl clone and push, change requests).
-# When main holds nothing but what earlier builds brought, apply is merged into
-# main here (scripts/sync_branch.py). When people changed main since, a change
-# request from apply is opened instead, so nobody's change is merged unseen.
+# change the dataset's descriptions on Queria (its screens, fdl clone and push,
+# change requests). Queria keeps people from changing rows in a dataset that has
+# an apply branch: apply never takes main in, so a row changed on main would
+# conflict with every later build. Errors in the data go to the publisher of the
+# source data. When main holds nothing but what earlier builds brought, apply is
+# merged into main here (scripts/sync_branch.py). When people changed main since,
+# a change request from apply is opened instead, so nobody's change is merged unseen.
 #
 # Environment:
 #   FDL_TOKEN    a Queria API token that may write the dataset (or `queria login`, which lets fdl ask queria for it).
