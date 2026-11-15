@@ -44,7 +44,7 @@ logger = logging.getLogger("pipelines")
 
 # 行政事業レビューのシートをテーブルにした Queria の公開データセット（queria/rssystem）。
 # 行政事業レビュー見える化サイトから直接 CSV を取ると、GitHub のランナーによっては画面の HTML が返るので、こちらを読む
-RSSYSTEM = "ducklake:https://data.queria.io/datasets/queria/rssystem/ducklake.duckdb"
+RSSYSTEM = "ducklake:https://data.queria.io/datasets/queria/rssystem/metadata.db"
 INTERVAL = 1.0
 
 
