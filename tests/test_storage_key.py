@@ -60,6 +60,16 @@ class StorageKeyTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             storage_key.key_of({**ANSWER, "QueriaStorage": storage})
 
+    def test_a_key_for_any_data_dir_is_used(self):
+        answer = {**ANSWER, "QueriaStorage": {**ANSWER["QueriaStorage"], "prefix": "019a4f2b/ducklake.duckdb.files/"}}
+        self.assertEqual(storage_key.storage_of(answer)["data"], "s3://queria/019a4f2b/ducklake.duckdb.files/")
+
+    def test_a_key_beyond_the_data_files_is_not_used(self):
+        for prefix in ("019a4f2b/", "019a4f2b/../", "019a4f2b//", "019a4f2b/data", "other/data/"):
+            answer = {**ANSWER, "QueriaStorage": {**ANSWER["QueriaStorage"], "prefix": prefix}}
+            with self.subTest(prefix=prefix), self.assertRaises(ValueError):
+                storage_key.storage_of(answer)
+
     def test_the_credential_process_prints_the_key_alone(self):
         env = {"FDL_TOKEN": "t"}
         out = io.StringIO()
