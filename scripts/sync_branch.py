@@ -1,17 +1,17 @@
-"""Whether the Sync may bring the sync branch into main by itself.
+"""Whether the build may bring the apply branch into main by itself.
 
 Usage:
   python sync_branch.py <remote> [<main version>]
   python sync_branch.py --target <remote>     print the Queria API and <handle>/<name>
 
-The Sync builds on refs/heads/sync, which only ever holds versions built from
+The build runs on refs/heads/apply, which only ever holds versions built from
 this repository's code. main is where people change the dataset (on Queria's
 screens, or with fdl clone, push and change requests). Prints one of:
 
   new      main does not exist yet
-  start    main exists and the sync branch does not: start it at main
-  auto     main holds nothing but what earlier Syncs brought: merge sync into it
-  request  main has changes of its own since the last Sync: open a change request
+  start    main exists and the apply branch does not: start it at main
+  auto     main holds nothing but what earlier builds brought: merge apply into it
+  request  main has changes of its own since the last build: open a change request
 """
 
 from __future__ import annotations
@@ -32,21 +32,21 @@ def decide(store, main_id: str | None = None) -> str:
     Judging the version the merge will build on keeps a push to main between
     the judgment and the clone from being merged unseen.
     """
-    sync = repo.head(store, "refs/heads/sync")
+    apply = repo.head(store, "refs/heads/apply")
     main = repo.read_version(store, main_id) if main_id else repo.head(store, "refs/heads/main")
     if main is None:
         return "new"
-    if sync is None:
+    if apply is None:
         return "start"
-    # main is a merge of a version on sync (a Sync's merge, or a change request
-    # from sync merged on Queria), or main is behind sync. sync only ever grows
+    # main is a merge of a version on apply (a build's merge, or a change request
+    # from apply merged on Queria), or main is behind apply. apply only ever grows
     # by first parent, so both walk its first-parent history, which stops at the
-    # version's seq instead of reading every version behind sync. A merge of an
-    # older sync version still counts, so a run that pushed sync and stopped
+    # version's seq instead of reading every version behind apply. A merge of an
+    # older apply version still counts, so a run that pushed apply and stopped
     # before the merge does not leave every later build asking for a request.
-    if any(repo.in_history(store, merged, sync) for merged in main.parents[1:]):
+    if any(repo.in_history(store, merged, apply) for merged in main.parents[1:]):
         return "auto"
-    if repo.in_history(store, main.id, sync):
+    if repo.in_history(store, main.id, apply):
         return "auto"
     return "request"
 

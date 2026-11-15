@@ -39,17 +39,17 @@ def decide(versions: dict, refs: dict, main_id: str | None = None) -> str:
         return sync_branch.decide(None, main_id)
 
 
-MAIN, SYNC = "refs/heads/main", "refs/heads/sync"
+MAIN, SYNC = "refs/heads/main", "refs/heads/apply"
 
 
 class DecideTest(unittest.TestCase):
     def test_no_main(self):
         self.assertEqual(decide({}, {}), "new")
 
-    def test_no_sync_starts_it(self):
+    def test_no_apply_branch_starts_it(self):
         self.assertEqual(decide({"a": ()}, {MAIN: "a"}), "start")
 
-    def test_main_behind_sync_is_merged(self):
+    def test_main_behind_apply_is_merged(self):
         self.assertEqual(decide({"a": (), "b": ("a",)}, {MAIN: "a", SYNC: "b"}), "auto")
 
     def test_main_that_merged_the_last_build_is_merged_again(self):
@@ -61,7 +61,7 @@ class DecideTest(unittest.TestCase):
         self.assertEqual(decide(versions, {MAIN: "h", SYNC: "b"}), "request")
 
     def test_main_that_merged_an_earlier_build_is_merged_again(self):
-        # a run pushed b2 to sync and stopped before merging it
+        # a run pushed b2 to apply and stopped before merging it
         versions = {"a": (), "b": ("a",), "m": ("a", "b"), "b2": ("b",), "c": ("b2",)}
         self.assertEqual(decide(versions, {MAIN: "m", SYNC: "c"}), "auto")
 
