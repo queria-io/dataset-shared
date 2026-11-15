@@ -124,15 +124,20 @@ GitHub Actions のジョブに `id-token: write` があると、`scripts/build-f
 呼び出し側の Apply に `permissions` を書きます。Queria のトークンはシークレットで渡しません。Queria が交換を断ったときは、ビルドが止まります。
 
 ```yaml
+name: Apply
+
 jobs:
   sync:
     permissions:
-      contents: read
+      contents: write
+      pull-requests: write
       id-token: write
     uses: queria-io/dataset-shared/.github/workflows/sync.yml@<shared の SHA>
     secrets:
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 ```
+
+`contents: write` と `pull-requests: write` は、Queria で変更された説明をこのリポジトリに戻す PR に使います。`scripts/build-fdl.sh` の最後に `scripts/import-pr.sh` が、main の説明のうち人が変えてこのコードに無いものを `scripts/import_description.py` で dataset.yml・*.table.yml・README.md・docs/ に書き、`queria/import-description` ブランチから PR を出します（開いていれば更新）。マージすると次のビルドが同じ説明を書くので、main とコードの差が無くなります。権限が無いときや、組織の設定で GitHub Actions に PR の作成を許していないときは、警告を出すだけでビルドは成功のままです。
 
 Queria の照合は、SHA で固定したワークフローもパスが登録と同じなら通す。
 

@@ -170,11 +170,10 @@ new)
     uv run fdl branch "$remote" main refs/heads/apply
     ;;
 auto)
-    if uv run fdl merge refs/heads/apply "$main" --author "$author" -m "Merge apply" && uv run fdl push "$main"; then
-        exit 0
+    if ! { uv run fdl merge refs/heads/apply "$main" --author "$author" -m "Merge apply" && uv run fdl push "$main"; }; then
+        echo "apply could not be merged into main: opening a change request" >&2
+        request=1
     fi
-    echo "apply could not be merged into main: opening a change request" >&2
-    request=1
     ;;
 request)
     echo "main has changes of its own since the last build: opening a change request" >&2
@@ -198,4 +197,12 @@ if [ -n "$request" ]; then
         --title "${FDL_MESSAGE:-build}" --body "Built from ${GITHUB_REPOSITORY:-this repository}${GITHUB_SHA:+ at $GITHUB_SHA}" 2>&1)" \
         || case "$out" in *request_exists* | *"already has open request"*) echo "the open change request from apply now shows this build" >&2 ;; *) echo "$out" >&2; exit 1 ;; esac
     echo "$out"
+fi
+
+# The description people changed on Queria goes back into this code as a pull
+# request, so the code follows main (scripts/import_description.py). Only in
+# GitHub Actions, with `contents: write` and `pull-requests: write`; the version
+# is already published, so a refusal here only warns.
+if [ -n "${GITHUB_ACTIONS:-}" ]; then
+    "$(dirname "$0")/import-pr.sh" "$remote" || echo "warning: could not open the pull request that brings Queria's description back" >&2
 fi

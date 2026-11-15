@@ -135,6 +135,10 @@ jobs:
           uv sync
 
       - name: Build and push
+        # scripts/import-pr.sh opens the pull request that brings the description
+        # changed on Queria back, when the caller gives contents and pull-requests: write
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: scripts/build.sh
 
   notify-failure:
