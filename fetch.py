@@ -11,16 +11,20 @@
   大きな配布物の一部だけを読む。Range が効かずに全体が返ってきたら RangeNotSupported で止める
 - download: 本文を少しずつファイルに書く。Range が効かない配信元から大きな配布物を
   取るときの代わりの手段
+- fetch_file: 配布元のファイルを取得し、source_file の 1 行（URL・sha256・ETag など）を返す。
+  前回の行を渡すと条件付き GET を送り、変わっていなければダウンロードしない
 - write_atomic / replacing: 一時ファイルに書いてから置き換える。途中で失敗したときや、
   呼び出し側が例外を投げたとき（0件だった、など）は前回の出力を残す
 """
 
 import contextlib
+import hashlib
 import http.client
 import io
 import logging
 import time
 from collections.abc import Callable, Iterator
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TypeVar
 from urllib.error import HTTPError
@@ -193,6 +197,62 @@ def download(
         return written
 
     return request(Request(url, headers=headers), save, **options)
+
+
+def _conditions(previous: dict | None, path: Path) -> dict[str, str]:
+    """前回の行から条件付き GET のヘッダーを作る。手元にファイルが無ければ条件を付けない。"""
+    if not previous or not path.exists():
+        return {}
+    pairs = (("If-None-Match", previous.get("etag")), ("If-Modified-Since", previous.get("last_modified")))
+    return {key: value for key, value in pairs if value}
+
+
+def fetch_file(
+    url: str,
+    path: Path,
+    *,
+    previous: dict | None = None,
+    user_agent: str | None = None,
+    chunk_size: int = 1 << 20,
+    **options,
+) -> dict:
+    """url を path に取得し、source_file の 1 行を返す。
+
+    返す行: url・sha256・bytes・media_type・retrieved_at（UTC）・etag・last_modified。
+    previous に前回の行を渡し、path が手元にあれば、ETag と Last-Modified で条件付き GET を送る。
+    304 が返ったらダウンロードせず previous をそのまま返す。ETag も Last-Modified も無い行では
+    条件を付けずに毎回取得する。
+    """
+    headers = {"User-Agent": user_agent} if user_agent else {}
+    conditions = _conditions(previous, path)
+
+    def save(response) -> dict:
+        digest = hashlib.sha256()
+        written = 0
+        with replacing(path) as partial, partial.open("wb") as handle:
+            while block := response.read(chunk_size):
+                handle.write(block)
+                digest.update(block)
+                written += len(block)
+            expected = response.headers.get("Content-Length")
+            if expected is not None and written != int(expected):
+                raise http.client.IncompleteRead(b"", int(expected) - written)
+        return {
+            "url": url,
+            "sha256": digest.hexdigest(),
+            "bytes": written,
+            "media_type": response.headers.get_content_type(),
+            "retrieved_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "etag": response.headers.get("ETag"),
+            "last_modified": response.headers.get("Last-Modified"),
+        }
+
+    try:
+        return request(Request(url, headers={**headers, **conditions}), save, **options)
+    except HTTPError as error:
+        if error.code == 304 and conditions and previous:
+            return previous
+        raise
 
 
 @contextlib.contextmanager
