@@ -30,8 +30,8 @@
 #   FDL_AUTHOR   who made it (default: git's user.name)
 #   FDL_ASSETS   a folder with the files the asset columns point at (fdl commit --assets)
 #   FDL_UNDESCRIBED  unlisted: tables with no description (*.table.yml) are not listed on Queria
-#   FDL_DIRECT   0 to keep new data files in a local folder until the commit, even when
-#                Queria gives a key to write them straight to storage (default: 1)
+#   FDL_DIRECT   1 to write new data files straight to storage when Queria gives a key
+#                to them, instead of keeping them in a local folder until the commit (default: 0)
 #   QUERIA_USER_AGENT  the name the build reads data.queria.io under (default: queria-build/fdl-<version>)
 set -euo pipefail
 
@@ -62,14 +62,17 @@ if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
     unset FDL_TOKEN
 fi
 
-# New data files go straight to the dataset's storage when Queria gives a key to
-# its data files (the data_dir in fdl.json; write and read, no delete): nothing
-# stays on this machine, so a small disk can build a large dataset. The key lasts
-# minutes; DuckDB takes a new one whenever storage refuses the old
-# (scripts/storage_key.py). Without one, clone keeps new files in a local
+# With FDL_DIRECT=1, new data files go straight to the dataset's storage when Queria
+# gives a key to its data files (the data_dir in fdl.json; write and read, no
+# delete): nothing stays on this machine, so a small disk can build a large
+# dataset. The key lasts minutes; DuckDB is meant to take a new one whenever
+# storage refuses the old (scripts/storage_key.py). It is off by default: dbt
+# runs tens of times slower against storage than against a local folder, and
+# builds past an hour fail with 403 SignatureDoesNotMatch when reading files
+# written with an earlier key. By default clone keeps new files in a local
 # folder that the commit uploads.
 storage=()
-if [ "${FDL_DIRECT:-1}" != 0 ] \
+if [ "${FDL_DIRECT:-0}" = 1 ] \
     && keys="$(uv run python "$(dirname "$0")/storage_key.py" issue "$remote")"; then
     eval "$keys"
     trap 'uv run python "$(dirname "$0")/storage_key.py" drop || true' EXIT
