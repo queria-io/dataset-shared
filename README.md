@@ -16,7 +16,7 @@ git submodule add https://github.com/queria-io/dataset-shared.git shared
 scripts/build.sh
 ```
 
-公開先は選ばない。データセットは `dataset.yml`、アカウントはトークンが決める（手元では `FDL_TOKEN` か `queria login`、GitHub Actions では OIDC で取るトークン）。
+公開先は選ばない。データセットは `queria.yml` の `name`、アカウントはトークンが決める（手元では `FDL_TOKEN` か `queria login`、GitHub Actions では OIDC で取るトークン）。
 公開せずに 1 回転させたいときは queria-cli の `tools/rotate.py` をスタンドインに向けて回す
 （fdl の `local` ターゲットに相当するものは無い。書き込みは Queria が発行する
 一時認証情報を必ず経由する）。
@@ -51,7 +51,7 @@ sed 's/DATASET_NAME/<name>/g' shared/templates/profiles.yml > profiles.yml
 
 ## 提供スクリプト
 
-- `scripts/build-fdl.sh`: `refs/heads/apply` ブランチで `fdl clone` → ビルド → `fdl commit` → `fdl push` を回し、apply を main に取り込む。apply ブランチにはこのコードから作ったバージョンだけが積まれる。main に前回のビルドより後の人の変更（Queria の画面、`fdl clone` と `fdl push`、変更リクエストのマージ）が無ければ `fdl merge` して main を進め、あれば apply からの変更リクエストを作って人が確認するまで main を変えない（`scripts/sync_branch.py`）。merge が衝突したときや main に push できないとき（承認必須のデータセット）も変更リクエストにする。Queria は apply ブランチのあるデータセットで、人がテーブルの行や列を変更したバージョンを main に入れない（apply は main を取り込まないので、main で変えた行は以後のビルドと毎回競合する）。人が main で変更できるのは説明だけで、データの誤りは元データの公開元に報告する。main で変えた説明はビルドの後にコードへ取り込むプルリクエストになり（`scripts/import-pr.sh`）、説明が競合して apply からの変更リクエストをマージできないときは、そのプルリクエストをマージしてからもう一度 Apply を実行する。ビルドが dbt の `target/manifest.json` を書いたときは、モデルの SQL（`sql`）と、profiles.yml が読むだけで ATTACH する公開データセットのエイリアス（`catalogs`）を記述に追加してから commit する（`scripts/dbt_lineage.py`）。依存先（`depends_on`）は fdl commit が SQL から作る。記述に書いた値が優先される。main への push で、前回のビルドから説明のファイル（dataset.yml・*.table.yml・README.md・docs/）しか変わっていないときは、ビルドを実行せず、apply のデータのまま新しい説明でバージョンを作る（SQL と `catalogs` は apply の先頭の dataset.json から引き継ぐ）。どのコミットのコードでデータを作ったかは、各バージョンのメッセージの `Built-From: <SHA>` に記録する（`scripts/built_from.py`）。スケジュールと手動の実行は常にビルドする
+- `scripts/build-fdl.sh`: `refs/heads/apply` ブランチで `fdl clone` → ビルド → `fdl commit` → `fdl push` を回し、apply を main に取り込む。apply ブランチにはこのコードから作ったバージョンだけが積まれる。main に前回のビルドより後の人の変更（Queria の画面、`fdl clone` と `fdl push`、変更リクエストのマージ）が無ければ `fdl merge` して main を進め、あれば apply からの変更リクエストを作って人が確認するまで main を変えない（`scripts/sync_branch.py`）。merge が衝突したときや main に push できないとき（承認必須のデータセット）も変更リクエストにする。Queria は apply ブランチのあるデータセットで、人がテーブルの行や列を変更したバージョンを main に入れない（apply は main を取り込まないので、main で変えた行は以後のビルドと毎回競合する）。人が main で変更できるのは説明だけで、データの誤りは元データの公開元に報告する。main で変えた説明はビルドの後にコードへ取り込むプルリクエストになり（`scripts/import-pr.sh`）、説明が競合して apply からの変更リクエストをマージできないときは、そのプルリクエストをマージしてからもう一度 Apply を実行する。commit の前に `queria metadata pack` が説明を検査し、`fdl commit --dataset` に渡すフォルダ（`dataset.json`・README.md・テーブルのガイド・ドキュメント）を `.fdl/pack/` に書き出す。ビルドが dbt の `target/manifest.json` を書いたときは、モデルの SQL（`sql`）と依存先（`depends_on`）、profiles.yml が読むだけで ATTACH する公開データセットのエイリアス（`catalogs`）も pack が入れる。記述に書いた値が優先される。main への push で、前回のビルドから説明のファイル（queria.yml・Markdown・docs/、まだ移していないリポジトリでは dataset.yml・*.table.yml）しか変わっていないときは、ビルドを実行せず、apply のデータのまま新しい説明でバージョンを作る（SQL と `catalogs` は apply の先頭の dataset.json から引き継ぐ）。どのコミットのコードでデータを作ったかは、各バージョンのメッセージの `Built-From: <SHA>` に記録する（`scripts/built_from.py`）。スケジュールと手動の実行は常にビルドする
 
 ## 取得の共通部品
 
@@ -139,7 +139,7 @@ jobs:
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 ```
 
-`contents: write` と `pull-requests: write` は、Queria で変更された説明をこのリポジトリに戻す PR に使います。`scripts/build-fdl.sh` の最後に `scripts/import_description.py` が、main の説明のうち人が変えてこのコードに無いものを dataset.yml・*.table.yml・README.md・docs/ に書き、ワークフローの次のステップで `scripts/import-pr.sh` が `queria/import-description` ブランチから PR を出します（開いていれば更新、内容が同じなら何もしない）。書き込める GITHUB_TOKEN を持つのはこのステップだけで、checkout は認証情報を残しません。マージすると次のビルドが同じ説明を書くので、main とコードの差が無くなります。権限が無いときや、組織の設定で GitHub Actions に PR の作成を許していないときは、警告を出すだけでビルドは成功のままです。
+`contents: write` と `pull-requests: write` は、Queria で変更された説明をこのリポジトリに戻す PR に使います。`scripts/build-fdl.sh` の最後に、main の説明のうち人が変えてこのコードに無いものを `scripts/import_description.py` が見つけ、`queria metadata unpack` が queria.yml・テーブルの Markdown・README.md などに書き（コメントは残す）、ワークフローの次のステップで `scripts/import-pr.sh` が `queria/import-description` ブランチから PR を出します（開いていれば更新、内容が同じなら何もしない）。書き込める GITHUB_TOKEN を持つのはこのステップだけで、checkout は認証情報を残しません。マージすると次のビルドが同じ説明を書くので、main とコードの差が無くなります。権限が無いときや、組織の設定で GitHub Actions に PR の作成を許していないときは、警告を出すだけでビルドは成功のままです。
 
 Queria の照合は、SHA で固定したワークフローもパスが登録と同じなら通す。
 
@@ -243,8 +243,8 @@ jobs:
 他のデータセットの表を読むときは、その表を raw とみなし、stg で読む。
 
 出荷されるのは、ビルドがカタログに書いた表すべて。fdl はカタログの表を `dataset.json` に
-全部載せる。Queria の画面と検索に出さない表は、`*.table.yml` に
-`annotations: { queria: { published: false } }` と書く。層はモデルを読む側のための区切りで、
+全部載せる。Queria の画面と検索に出さない表は、テーブルの Markdown のフロントマターに
+`published: false` と書く。層はモデルを読む側のための区切りで、
 ディレクトリでは出荷も掲載も決まらない。
 
 用途別の集計はデータセットに入れない。ショーケース用のデモデータセットへ寄せる。
@@ -282,7 +282,7 @@ Excel・CSV・PDF・ZIP など、配布元がファイルで配るデータは�
 掲載ページから外れる・同じ URL で差し替わる）だけを FDL のアセットとして入れる。再配布を認めていない配布元のファイルは入れない。
 
 - アセットにするファイルは `data/assets/<sha256>.<拡張子>` に置く。アップロードするときのメディアタイプは拡張子から決まる
-- アセットを指す列に `*.table.yml` で `asset: true` を付ける。付けないと `--assets` を渡しても何もアップロードされない。
+- アセットを指す列に、テーブルの Markdown のフロントマターで `asset: true` を付ける。付けないと `--assets` を渡しても何もアップロードされない。
   `fdl push` は、`asset: true` の列にリポジトリにも手元にも無い sha256 があると止まる。
   `source_file` の一部のファイルだけをアセットにするときは `sha256` 列には付けず、アセットにしたファイルの sha256 だけを入れて
   ほかは NULL にした列（`asset_sha256`）に付ける
@@ -316,8 +316,9 @@ Excel・CSV・PDF・ZIP など、配布元がファイルで配るデータは�
 docs.queria.io のクックブックに取り込まれる。取り込みはカタログに登録済みの
 リポジトリからしか行われないので、これは first-party 固有の話になる。
 
-メタデータは `dataset.yml` と `*.table.yml` にだけ書く。dbt の `meta:` には書かない。
-配布されるのは `queria compile` が出力する `dataset.json` で、その入力は宣言だけ。
+メタデータは `queria.yml` とテーブルの Markdown にだけ書く。dbt の `meta:` には書かない。
+配布されるのは `queria metadata pack` が出力する `dataset.json` で、その入力はこれらのファイルだけ。
+ビルドと保守の手順は README.md ではなく CONTRIBUTING.md に書く（README.md はデータセットの概要として Queria に表示される）。
 
 **`ai_context` は廃止する。** 書いても読む先が無いので埋める必要はない。既に書いてある
 リポジトリは、`instructions` を各階層の説明へ、`synonyms` を `keywords` へ畳んで
