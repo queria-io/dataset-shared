@@ -16,6 +16,7 @@ description on the data it already has.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -23,13 +24,14 @@ import sys
 from fnmatch import fnmatchcase
 from pathlib import Path, PurePosixPath
 
-from fdl import dataset
-
 TRAILER = "Built-From"
 _TRAILER = re.compile(rf"^{TRAILER}: ([0-9a-f]{{40}})$", re.MULTILINE)
 
-#: The files fdl commit reads the description from. Anything else may change the data.
-DESCRIPTION_FILES = (*dataset.DEFAULT_FILES, "README.md")
+#: The files queria metadata pack reads the description from (queria.yml, and the
+#: older dataset.yml). Anything else may change the data.
+DESCRIPTION_FILES = ("queria.yml", "dataset.yml")
+#: Markdown anywhere (the tables' files, README.md, documents) and the older table files.
+DESCRIPTION_PATTERNS = ("*.md", "*.table.yml")
 DESCRIPTION_DIR = "docs/"
 
 
@@ -38,7 +40,7 @@ def is_description(path: str) -> bool:
     name = PurePosixPath(path).name
     return (
         path in DESCRIPTION_FILES
-        or any(fnmatchcase(name, pattern) for pattern in dataset.TABLE_FILES)
+        or any(fnmatchcase(name, pattern) for pattern in DESCRIPTION_PATTERNS)
         or path.startswith(DESCRIPTION_DIR)
     )
 
@@ -103,7 +105,7 @@ def description_only(store, out: Path) -> str | None:
     if not described:
         print("apply has no dataset.json to take the SQL from: building", file=sys.stderr)
         return None
-    out.write_bytes(dataset.to_json(described))
+    out.write_text(json.dumps(described, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return sha
 
 

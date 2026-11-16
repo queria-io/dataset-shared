@@ -20,11 +20,19 @@ SHA = "0123456789abcdef0123456789abcdef01234567"
 
 class DescriptionTest(unittest.TestCase):
     def test_description_files(self):
-        for path in ("dataset.yml", "README.md", "models/a/population.table.yml", "docs/index.md"):
+        for path in (
+            "queria.yml",
+            "README.md",
+            "models/a/population.md",
+            "models/README.md",
+            "docs/index.md",
+            "dataset.yml",
+            "models/a/population.table.yml",
+        ):
             self.assertTrue(built_from.is_description(path), path)
 
     def test_code_and_other_files(self):
-        for path in ("models/a/population.sql", "main.py", "uv.lock", "shared", "models/README.md"):
+        for path in ("models/a/population.sql", "main.py", "uv.lock", "shared", "profiles.yml"):
             self.assertFalse(built_from.is_description(path), path)
 
 

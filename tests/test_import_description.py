@@ -1,6 +1,6 @@
 """scripts/import_description.py のテスト。
 
-実行: uv run --no-project --with fdl-cli --with ruamel.yaml python -m unittest discover -s tests
+実行: uv run --no-project --with fdl-cli python -m unittest discover -s tests
 """
 
 import json
@@ -45,19 +45,11 @@ def build(remote: Path, store: LocalStore, working: Path, sql: str, branch: str)
     fdl("push", working)
 
 
-DATASET = """\
-# kept comment
-name: towns
-title: Towns
-"""
-TABLE = """\
-schema: main
-name: towns
-description: Towns
-fields:
-  - name: id
-    title: ID
-"""
+DATASET = {
+    "name": "towns",
+    "title": "Towns",
+    "tables": [{"schema": "main", "name": "towns", "description": "Towns", "fields": [{"name": "id", "title": "ID"}]}],
+}
 
 
 class ImportTest(unittest.TestCase):
@@ -66,9 +58,9 @@ class ImportTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.addCleanup(os.chdir, os.getcwd())
         self.code = self.tmp / "code"
-        (self.code / "models").mkdir(parents=True)
-        (self.code / "dataset.yml").write_text(DATASET)
-        (self.code / "models" / "towns.table.yml").write_text(TABLE)
+        self.code.mkdir()
+        # What queria metadata pack writes for fdl commit
+        (self.code / "dataset.json").write_text(json.dumps(DATASET))
         (self.code / "README.md").write_text("# Towns\n")
         self.remote = self.tmp / "remote"
         self.store = LocalStore(self.remote)
@@ -94,33 +86,29 @@ class ImportTest(unittest.TestCase):
         os.chdir(self.code)
 
     def test_nothing_changed_writes_nothing(self):
-        self.assertEqual(import_description.import_description(self.store, self.code), [])
+        out = self.tmp / "versions"
+        self.assertFalse(import_description.versions_to_import(self.store, out))
+        self.assertFalse(out.exists())
 
-    def test_changes_on_main_are_written_to_their_files(self):
+    def test_main_and_its_base_are_written_when_main_changed(self):
         def change(folder: Path):
             path = folder / "dataset.json"
-            text = path.read_text()
-            text = text.replace('"title": "Towns"', '"title": "Towns of Japan"')
-            text = text.replace('"title": "ID"', '"title": "Town ID"')
-            path.write_text(text)
+            path.write_text(path.read_text().replace('"title": "ID"', '"title": "Town ID"'))
             (folder / "README.md").write_text("# Towns of Japan\n")
 
         self.edit_main(change)
-        written = import_description.import_description(self.store, self.code)
-        self.assertEqual(written, ["dataset.yml", "models/towns.table.yml", "README.md"])
-        dataset = (self.code / "dataset.yml").read_text()
-        self.assertIn("# kept comment", dataset)
-        self.assertIn("title: Towns of Japan", dataset)
-        self.assertIn("title: Town ID", (self.code / "models" / "towns.table.yml").read_text())
-        self.assertEqual((self.code / "README.md").read_text(), "# Towns of Japan\n")
+        out = self.tmp / "versions"
+        self.assertTrue(import_description.versions_to_import(self.store, out))
+        main = json.loads((out / "main" / "dataset.json").read_text())
+        self.assertEqual(main["tables"][0]["fields"][0]["title"], "Town ID")
+        self.assertEqual((out / "main" / "README.md").read_text(), "# Towns of Japan\n")
+        self.assertEqual((out / "base" / "README.md").read_text(), "# Towns\n")
 
-    def test_a_change_the_code_already_holds_is_not_written(self):
+    def test_a_change_the_code_already_holds_is_not_brought_back(self):
         self.edit_main(lambda f: (f / "README.md").write_text("# Same\n"))
         (self.code / "README.md").write_text("# Same\n")
         build(self.remote, self.store, self.code / ".fdl" / "b.sqlite", "SELECT 1", "apply")
-        written = import_description.import_description(self.store, self.code)
-        self.assertNotIn("README.md", written)
-
+        self.assertFalse(import_description.versions_to_import(self.store, self.tmp / "versions"))
 
     def heads(self):
         return repo.head(self.store, "refs/heads/main"), repo.head(self.store, "refs/heads/apply")

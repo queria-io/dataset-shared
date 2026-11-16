@@ -1,16 +1,16 @@
-"""Write the description people changed on Queria back into this repository.
+"""Find the description people changed on Queria and write the versions to compare.
 
-Usage: python import_description.py <remote>
+Usage: python import_description.py <remote> <out>
 
-main may hold changes to the description (dataset.json, README.md, docs/) that
-were made on Queria and are not in this code. They are the changes main made
+main may hold changes to the description (dataset.json and the files of its tree)
+that were made on Queria and are not in this code. They are the changes main made
 since its merge base with refs/heads/apply, less those the apply branch already
-holds. Each is written to the file it comes from: the dataset's keys to
-dataset.yml, a table's to its *.table.yml (or its entry in dataset.yml), and
-the files of tree.json as they are. Comments and order in the YAML are kept.
-Prints each path written, one per line; nothing when there is nothing to bring back.
-
-What the build fills in (types, rows, sql, depends_on, catalogs) is not written.
+holds. When there are any, main is written to <out>/main and the merge base to
+<out>/base, each as fdl clone writes a version (dataset.json and its files), and
+<out> is printed; nothing is printed when there is nothing to bring back.
+`queria metadata unpack <out>/main --base <out>/base` then writes the changes
+into queria.yml and the table Markdown files (or the older dataset.yml and
+*.table.yml), keeping comments and what this code changed itself.
 """
 
 from __future__ import annotations
@@ -21,31 +21,15 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from fdl import repo
-from fdl import dataset as datasets
 from fdl import diff as diffs
 from fdl import merge as merging
 from fdl import objects
+from fdl import repo
 from fdl.stores import open_store
 
 FILLED = {"tables", "catalogs", "sql", "depends_on", "rows", "kind", "fields", "type", "nullable"}
 MISSING = object()
 
-
-
-def _yaml():
-    """A round-trip YAML that keeps comments and the repositories' indentation.
-
-    Imported here so that sync_branch.py, which reads only the drift, runs without ruamel.
-    """
-    from ruamel.yaml import YAML
-
-    yaml = YAML()
-    yaml.preserve_quotes = True
-    yaml.width = 4096
-    # The dataset repositories indent list items under their key (`fields:\n  - name:`)
-    yaml.indent(mapping=2, sequence=4, offset=2)
-    return yaml
 
 
 def changed(base: dict, ours: dict, theirs: dict) -> dict[str, Any]:
@@ -82,49 +66,6 @@ def table_changes(base: dict, ours: dict, theirs: dict) -> dict[tuple, dict]:
         if keys or columns:
             found[key] = {"keys": keys, "fields": columns}
     return found
-
-
-def apply_keys(record: dict, keys: dict) -> None:
-    for key, value in keys.items():
-        if value is MISSING:
-            record.pop(key, None)
-        else:
-            record[key] = value
-
-
-def apply_table(record: dict, change: dict) -> None:
-    apply_keys(record, change["keys"])
-    if change["fields"]:
-        fields = record.setdefault("fields", [])
-        for name, keys in change["fields"].items():
-            field = next((f for f in fields if f.get("name") == name), None)
-            if field is None:
-                # Removing what the file never held changes nothing.
-                if all(value is MISSING for value in keys.values()):
-                    continue
-                field = {"name": name}
-                fields.append(field)
-            apply_keys(field, keys)
-
-
-def table_files(root: Path) -> dict[tuple, Path]:
-    """Each table file fdl commit reads below ``root`` by (schema, name), skipping hidden folders."""
-    found = {}
-    paths = (path for pattern in datasets.TABLE_FILES for path in root.rglob(pattern))
-    for path in sorted(paths):
-        if any(part.startswith(".") for part in path.relative_to(root).parts[:-1]):
-            continue
-        record = _yaml().load(path.read_text(encoding="utf-8")) or {}
-        found[(record.get("schema"), record.get("name"))] = path
-    return found
-
-
-def write_yaml(path: Path, record: Any) -> None:
-    if path.suffix == ".json":
-        path.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        return
-    with path.open("w", encoding="utf-8") as fh:
-        _yaml().dump(record, fh)
 
 
 def sha(entry: dict | None) -> str | None:
@@ -175,59 +116,36 @@ def is_empty(found: dict) -> bool:
     return not (found["keys"] or found["tables"] or found["tree"])
 
 
-def import_description(store, root: Path) -> list[str]:
+def write_version(store, version, folder: Path) -> None:
+    """``version``'s dataset.json and the files of its tree.json, written into ``folder``."""
+    folder.mkdir(parents=True)
+    described = diffs.described(store, version) or {}
+    (folder / "dataset.json").write_text(json.dumps(described, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    for entry in (diffs.listed(store, version) or {}).get("entries", []):
+        body = store.get(objects.asset_key(entry["sha256"]))
+        if hashlib.sha256(body).hexdigest() != entry["sha256"]:
+            raise SystemExit(f"{entry['path']}: the file's sha256 is not the one tree.json records")
+        local = folder / objects.check_path(entry["path"])
+        local.parent.mkdir(parents=True, exist_ok=True)
+        local.write_bytes(body)
+
+
+def versions_to_import(store, out: Path) -> bool:
+    """Write main and its merge base with apply into ``out`` when main changed the description."""
     main = repo.head(store, "refs/heads/main")
     apply = repo.head(store, "refs/heads/apply")
     base = merge_base(store, main, apply) if main and apply else None
     found = drift(store, base, main, apply) if base else None
     if found is None or is_empty(found):
-        return []
-    yaml = _yaml()
-    written: list[str] = []
-
-    dataset_path = root / "dataset.yml"
-    dataset = yaml.load(dataset_path.read_text(encoding="utf-8"))
-    keys = found["keys"]
-    files = table_files(root)
-    inline = by_key(dataset.get("tables", []) or [], "schema", "name")
-    dataset_changed = bool(keys)
-    for (schema, name), change in found["tables"].items():
-        if (schema, name) in files:
-            path = files[(schema, name)]
-            record = yaml.load(path.read_text(encoding="utf-8"))
-            apply_table(record, change)
-            write_yaml(path, record)
-            written.append(path.relative_to(root).as_posix())
-        elif (schema, name) in inline:
-            apply_table(inline[(schema, name)], change)
-            dataset_changed = True
-        else:
-            # A table the code does not describe: a file of its own, beside those of its schema.
-            near = next((p.parent for (s, _), p in files.items() if s == schema), root)
-            path = near / f"{name}.table.yml"
-            record = {"schema": schema, "name": name}
-            apply_table(record, change)
-            write_yaml(path, record)
-            written.append(path.relative_to(root).as_posix())
-    if dataset_changed:
-        apply_keys(dataset, keys)
-        write_yaml(dataset_path, dataset)
-        written.insert(0, "dataset.yml")
-
-    for path, ours in found["tree"].items():
-        local = root / objects.check_path(path)
-        if ours is None:
-            local.unlink(missing_ok=True)
-        else:
-            body = store.get(objects.asset_key(ours["sha256"]))
-            if hashlib.sha256(body).hexdigest() != ours["sha256"]:
-                raise SystemExit(f"{path}: the file's sha256 is not the one tree.json records")
-            local.parent.mkdir(parents=True, exist_ok=True)
-            local.write_bytes(body)
-        written.append(path)
-    return written
+        return False
+    write_version(store, main, out / "main")
+    write_version(store, base, out / "base")
+    return True
 
 
 if __name__ == "__main__":
-    for path in import_description(open_store(sys.argv[1]), Path(".")):
-        print(path)
+    if len(sys.argv) != 3:
+        print(__doc__.splitlines()[2], file=sys.stderr)
+        raise SystemExit(2)
+    if versions_to_import(open_store(sys.argv[1]), Path(sys.argv[2])):
+        print(sys.argv[2])

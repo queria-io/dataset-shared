@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Build a dataset with fdl: clone the apply branch, build on it, push a new
 # version to it, and bring it into main. Called from each dataset's scripts/build.sh.
-# `queria validate` runs between the build and the commit, so a failed check
-# makes no version.
+# `queria metadata pack` checks the description and writes what fdl commit takes
+# between the build and the commit, so a failed check makes no version.
 #
 # Usage:
 #   scripts/build.sh                  # build and publish
@@ -10,8 +10,9 @@
 #
 # The build reads and writes the working catalog fdl checks out: FDL_WORKING is
 # its path and FDL_DATA_PATH the folder new data files go to (profiles.yml
-# attaches both). fdl commit freezes it into a version described by dataset.yml,
-# and fdl push uploads it to refs/heads/apply.
+# attaches both). fdl commit freezes it into a version described by the folder
+# queria metadata pack writes from queria.yml and the table Markdown files, and
+# fdl push uploads it to refs/heads/apply.
 #
 # refs/heads/apply holds only versions built from this code. main is where people
 # change the dataset's descriptions on Queria (its screens, fdl clone and push,
@@ -29,7 +30,7 @@
 #   FDL_MESSAGE  the version's message (default: build, or "Update the description" when the build is skipped)
 #   FDL_AUTHOR   who made it (default: git's user.name)
 #   FDL_ASSETS   a folder with the files the asset columns point at (fdl commit --assets)
-#   FDL_UNDESCRIBED  unlisted: tables with no description (*.table.yml) are not listed on Queria
+#   FDL_UNDESCRIBED  unlisted: tables with no description (no table Markdown file) are not listed on Queria
 #   FDL_DIRECT   1 to write new data files straight to storage when Queria gives a key
 #                to them, instead of keeping them in a local folder until the commit (default: 0)
 #   QUERIA_USER_AGENT  the name the build reads data.queria.io under (default: queria-build/fdl-<version>)
@@ -39,9 +40,12 @@ if [ "$#" -eq 0 ]; then
     set -- python main.py
 fi
 
-name="$(sed -n 's/^name: *//p' dataset.yml | head -n 1)"
+# queria.yml, or dataset.yml in a repository that still keeps the older files.
+described_by=queria.yml
+[ -f "$described_by" ] || described_by=dataset.yml
+name="$(sed -n 's/^name: *//p' "$described_by" 2>/dev/null | head -n 1 || true)"
 if [ -z "$name" ]; then
-    echo "dataset.yml has no name" >&2
+    echo "$described_by has no name" >&2
     exit 2
 fi
 remote="${FDL_REMOTE:-https://data.queria.io/datasets/queria/$name/}"
@@ -156,30 +160,22 @@ else
     trailer="$(uv run python "$(dirname "$0")/built_from.py" trailer)"
 fi
 
-# Queria's checks before the version is made: the values Queria reads (licenses,
-# annotations.queria) and each table's primary_key against the data just built.
+# Queria's checks before the version is made (licenses, themes, join keys and each
+# table's primary_key against the data just built), then the folder fdl commit takes:
+# dataset.json, README.md, the tables' guides and the documents. From dbt's
+# target/manifest.json it adds each model's SQL and dependencies, and from
+# profiles.yml the other datasets it attaches (catalogs). When the build was
+# skipped there is no manifest: they come from apply's dataset.json (--base).
 # The dataset's own environment may not hold queria, so it runs as a tool.
-# @latest: uvx otherwise reuses whatever queria it cached first, and a queria
-# from before fdl datasets were understood refuses every annotations key.
-uvx queria@latest validate --quiet
-
-# dbt で作ったときは、モデルの SQL と、他のデータセットのエイリアス (profiles.yml の attach) を
-# 記述に書き足してから渡す。依存先は fdl commit が SQL から作る (scripts/dbt_lineage.py)。
-# FDL_UNDESCRIBED=unlisted なら、記述の無いテーブルを Queria に掲載しないものとして足す。
-# ビルドを省いたときは、SQL と catalogs を apply の先頭の dataset.json から引き継ぐ。
-describe=()
-manifest=-
-previous=()
-[ -f target/manifest.json ] && manifest=target/manifest.json
-[ -n "$built" ] && previous=(--previous .fdl/previous.json)
-if [ "$manifest" != - ] || [ -n "$built" ] || [ "${FDL_UNDESCRIBED:-}" = unlisted ]; then
-    described="$(uv run python "$(dirname "$0")/dbt_lineage.py" ${previous[@]+"${previous[@]}"} "$work" "$manifest" "${DBT_PROFILES_DIR:-.}/profiles.yml" .fdl/describe)"
-    describe=(--dataset "$described")
-fi
+# @latest: uvx otherwise reuses whatever queria it cached first.
+pack=(--quiet --profiles "${DBT_PROFILES_DIR:-.}/profiles.yml" --out .fdl/pack)
+[ -n "$built" ] && pack+=(--base .fdl/previous.json)
+[ "${FDL_UNDESCRIBED:-}" = unlisted ] && pack+=(--unlisted)
+uvx queria@latest metadata pack "${pack[@]}"
 
 author="${FDL_AUTHOR:-$(git config user.name || echo build)}"
 message="${FDL_MESSAGE:-$([ -n "$built" ] && echo "Update the description" || echo build)}"
-uv run fdl commit "$work" -m "$message${trailer:+$'\n\n'$trailer}" --author "$author" ${describe[@]+"${describe[@]}"} ${FDL_ASSETS:+--assets "$FDL_ASSETS"}
+uv run fdl commit "$work" -m "$message${trailer:+$'\n\n'$trailer}" --author "$author" --dataset .fdl/pack/dataset.json ${FDL_ASSETS:+--assets "$FDL_ASSETS"}
 uv run fdl push "$work"
 
 # Bring apply into main, or ask people to. main is judged at the version its
@@ -232,9 +228,17 @@ fi
 
 # The description people changed on Queria is written into this checkout, so
 # that the workflow's next step can bring it back as a pull request and the code
-# follows main (scripts/import_description.py, scripts/import-pr.sh). Only in
-# GitHub Actions; the version is already published, so a failure here only warns.
+# follows main (scripts/import_description.py, queria metadata unpack,
+# scripts/import-pr.sh). Only in GitHub Actions; the version is already published,
+# so a failure here only warns.
 if [ -n "${GITHUB_ACTIONS:-}" ]; then
-    uv run --with ruamel.yaml python "$(dirname "$0")/import_description.py" "$remote" >"${RUNNER_TEMP:?}/queria-import.txt" \
-        || echo "warning: could not read the description changed on Queria" >&2
+    versions="${RUNNER_TEMP:?}/queria-versions"
+    if found="$(uv run python "$(dirname "$0")/import_description.py" "$remote" "$versions")"; then
+        if [ -n "$found" ]; then
+            uvx queria@latest metadata unpack "$versions/main" --base "$versions/base" >"$RUNNER_TEMP/queria-import.txt" \
+                || echo "warning: could not write the description changed on Queria" >&2
+        fi
+    else
+        echo "warning: could not read the description changed on Queria" >&2
+    fi
 fi
