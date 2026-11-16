@@ -84,10 +84,10 @@ fi
 # delete): nothing stays on this machine, so a small disk can build a large
 # dataset. The key lasts minutes; DuckDB is meant to take a new one whenever
 # storage refuses the old (scripts/storage_key.py). It is off by default: dbt
-# runs tens of times slower against storage than against a local folder, and
-# builds past an hour fail with 403 SignatureDoesNotMatch when reading files
-# written with an earlier key. By default clone keeps new files in a local
-# folder that the commit uploads.
+# runs tens of times slower against storage than against a local folder. DuckDB
+# before 1.5.5 cannot take a new key for the secret, so storage_key.py gives no key
+# there and the build goes through a local folder. By default clone keeps new files
+# in a local folder that the commit uploads.
 storage=()
 if [ "${FDL_DIRECT:-0}" = 1 ] \
     && keys="$(uv run python "$(dirname "$0")/storage_key.py" issue "$remote")"; then

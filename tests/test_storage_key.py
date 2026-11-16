@@ -156,6 +156,13 @@ class StorageKeyTest(unittest.TestCase):
             self.assertEqual(storage_key.credential_process(REMOTE), 1)
         sleep.assert_not_called()
 
+    def test_duckdb_before_1_5_5_cannot_refresh(self):
+        self.assertFalse(storage_key.refreshes("1.5.4"))
+        self.assertFalse(storage_key.refreshes("1.4.5"))
+        self.assertTrue(storage_key.refreshes("1.5.5"))
+        self.assertTrue(storage_key.refreshes("2.0.0"))
+        self.assertFalse(storage_key.refreshes("dev"))
+
     def test_drop_touches_only_the_builds_own_secret(self):
         with mock.patch.dict("os.environ", {}, clear=True):
             self.assertEqual(storage_key.drop(), 0)
