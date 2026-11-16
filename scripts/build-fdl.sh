@@ -51,6 +51,19 @@ fi
 remote="${FDL_REMOTE:-https://data.queria.io/datasets/queria/$name/}"
 work=".fdl/work.sqlite"
 
+# fdl clone writes the version's description (dataset.json and its files, such as
+# README.md) into the folder it runs in, unless dataset.json or dataset.yml is
+# there, and refuses when one of those files already is. The description here is
+# queria.yml and the files beside it, so clone from an empty folder: only the
+# working metadata is kept.
+clone() {
+    local here="$PWD" empty status=0
+    empty="$(mktemp -d)"
+    (cd "$empty" && uv run --project "$here" fdl clone "$1" "$here/$2" "${@:3}") || status=$?
+    rm -rf "$empty"
+    return "$status"
+}
+
 # fdl is in beta: build with the latest, as the Apply workflow does, so that a build on this
 # machine makes and profiles the version like the Apply workflow even when uv.lock is old.
 uv lock --quiet --upgrade-package fdl-cli
@@ -117,7 +130,7 @@ decision="$(uv run python "$(dirname "$0")/sync_branch.py" "$remote")"
 if [ "$decision" = start ]; then
     uv run fdl branch "$remote" apply refs/heads/main >/dev/null
 fi
-uv run fdl clone "$remote" "$work" --branch apply ${storage[@]+"${storage[@]}"}
+clone "$remote" "$work" --branch apply ${storage[@]+"${storage[@]}"}
 FDL_DATA_PATH="$(data_path)"
 # Queria's key reaches the data files alone (FDL_STORAGE_DATA). If they are
 # somewhere else, the key cannot write them: build through a local folder.
@@ -128,7 +141,7 @@ if [ -n "${storage[*]+x}" ] && [ "$FDL_DATA_PATH" != "${FDL_STORAGE_DATA:-}" ]; 
     unset FDL_STORAGE FDL_STORAGE_DATA FDL_STORAGE_SECRET AWS_CONFIG_FILE
     storage=()
     rm -rf .fdl
-    uv run fdl clone "$remote" "$work" --branch apply
+    clone "$remote" "$work" --branch apply
     FDL_DATA_PATH="$(data_path)"
 fi
 export FDL_WORKING="$PWD/$work"
@@ -184,7 +197,7 @@ uv run fdl push "$work"
 main=".fdl/main.sqlite"
 decision="$(uv run python "$(dirname "$0")/sync_branch.py" "$remote")"
 if [ "$decision" != new ]; then
-    uv run fdl clone "$remote" "$main" >/dev/null
+    clone "$remote" "$main" >/dev/null
     base="$(uv run python -c 'import json, sys; print(json.load(open(sys.argv[1]))["base"])' "$main.fdl.json")"
     decision="$(uv run python "$(dirname "$0")/sync_branch.py" "$remote" "$base")"
 fi
