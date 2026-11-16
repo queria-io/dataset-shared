@@ -58,6 +58,16 @@ PROFILE = "fdl_build"
 MAX_WAIT = 15 * 60
 #: Where each data host's API is.
 API = {"data.queria.io": "https://queria.io"}
+#: The first DuckDB that can refresh a persistent secret. Before it, a refresh fails with
+#: "Cannot create temporary secrets in a persistent secret storage!", so a build that
+#: outlives its first key is refused by storage from then on.
+REFRESHES = (1, 5, 5)
+
+
+def refreshes(version: str) -> bool:
+    """Whether DuckDB ``version`` can take a new key for the persistent secret."""
+    numbers = re.match(r"(\d+)\.(\d+)\.(\d+)", version)
+    return bool(numbers) and tuple(map(int, numbers.groups())) >= REFRESHES
 
 
 def api_url(remote: str) -> str | None:
@@ -214,6 +224,13 @@ def issue(remote: str) -> int:
         import duckdb
     except ImportError as exc:
         print(f"storage key: none ({exc}); building through a local folder", file=sys.stderr)
+        return 1
+    if not refreshes(duckdb.__version__):
+        print(
+            f"storage key: none (DuckDB {duckdb.__version__} cannot refresh it; needs "
+            f"{'.'.join(map(str, REFRESHES))} or later); building through a local folder",
+            file=sys.stderr,
+        )
         return 1
 
     name = f"{SECRET}_{secrets.token_hex(8)}"
