@@ -26,7 +26,7 @@
 #   FDL_TOKEN    a Queria API token that may write the dataset (or `queria login`, which lets fdl ask queria for it).
 #                Not used in a GitHub Actions job with `id-token: write` (see below)
 #   FDL_REMOTE   the repository (default: https://data.queria.io/datasets/queria/<name>/)
-#   FDL_MESSAGE  the version's message (default: build)
+#   FDL_MESSAGE  the version's message (default: build, or "Update the description" when the build is skipped)
 #   FDL_AUTHOR   who made it (default: git's user.name)
 #   FDL_ASSETS   a folder with the files the asset columns point at (fdl commit --assets)
 #   FDL_UNDESCRIBED  unlisted: tables with no description (*.table.yml) are not listed on Queria
@@ -134,9 +134,24 @@ export FDL_DATA_PATH
 QUERIA_USER_AGENT="${QUERIA_USER_AGENT:-queria-build/fdl-$(uv run python -c 'import importlib.metadata as m; print(m.version("fdl-cli"))')}"
 export QUERIA_USER_AGENT
 
+# A push to main that changed only the description since apply's last build makes
+# a version of the new description on the data apply holds, without running the
+# dataset's code: the data would come out the same (scripts/built_from.py). Each
+# version records the commit whose code made its data as a trailer of its message.
+built=
+if [ "${GITHUB_EVENT_NAME:-}" = push ]; then
+    built="$(uv run python "$(dirname "$0")/built_from.py" check "$remote")" || built=
+fi
+
 # 前に手元で回した dbt の manifest を読まないように、ビルドの前に消す
 rm -f target/manifest.json
-uv run "$@"
+if [ -n "$built" ]; then
+    echo "only the description changed since the build from $built: not running the build"
+    trailer="Built-From: $built"
+else
+    uv run "$@"
+    trailer="$(uv run python "$(dirname "$0")/built_from.py" trailer)"
+fi
 
 # Queria's checks before the version is made: the values Queria reads (licenses,
 # annotations.queria) and each table's primary_key against the data just built.
@@ -148,16 +163,23 @@ uvx queria@latest validate --quiet
 # dbt で作ったときは、モデルの SQL と、他のデータセットのエイリアス (profiles.yml の attach) を
 # 記述に書き足してから渡す。依存先は fdl commit が SQL から作る (scripts/dbt_lineage.py)。
 # FDL_UNDESCRIBED=unlisted なら、記述の無いテーブルを Queria に掲載しないものとして足す。
+# ビルドを省いたときは、SQL と catalogs を apply の先頭の dataset.json から引き継ぐ。
 describe=()
 manifest=-
+previous=()
 [ -f target/manifest.json ] && manifest=target/manifest.json
-if [ "$manifest" != - ] || [ "${FDL_UNDESCRIBED:-}" = unlisted ]; then
-    described="$(uv run python "$(dirname "$0")/dbt_lineage.py" "$work" "$manifest" "${DBT_PROFILES_DIR:-.}/profiles.yml" .fdl/describe)"
+if [ -n "$built" ]; then
+    uv run python "$(dirname "$0")/built_from.py" described "$remote" .fdl/previous.json
+    previous=(--previous .fdl/previous.json)
+fi
+if [ "$manifest" != - ] || [ -n "$built" ] || [ "${FDL_UNDESCRIBED:-}" = unlisted ]; then
+    described="$(uv run python "$(dirname "$0")/dbt_lineage.py" ${previous[@]+"${previous[@]}"} "$work" "$manifest" "${DBT_PROFILES_DIR:-.}/profiles.yml" .fdl/describe)"
     describe=(--dataset "$described")
 fi
 
 author="${FDL_AUTHOR:-$(git config user.name || echo build)}"
-uv run fdl commit "$work" -m "${FDL_MESSAGE:-build}" --author "$author" ${describe[@]+"${describe[@]}"} ${FDL_ASSETS:+--assets "$FDL_ASSETS"}
+message="${FDL_MESSAGE:-$([ -n "$built" ] && echo "Update the description" || echo build)}"
+uv run fdl commit "$work" -m "$message${trailer:+$'\n\n'$trailer}" --author "$author" ${describe[@]+"${describe[@]}"} ${FDL_ASSETS:+--assets "$FDL_ASSETS"}
 uv run fdl push "$work"
 
 # Bring apply into main, or ask people to. main is judged at the version its

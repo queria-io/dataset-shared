@@ -1,6 +1,6 @@
 """dbt が作ったテーブルの SQL と、他のデータセットのエイリアスを、fdl commit に渡す記述に書き足す。
 
-使い方: python dbt_lineage.py <作業場のカタログ> <manifest.json か -> <profiles.yml> <出力先のフォルダ>
+使い方: python dbt_lineage.py [--previous <dataset.json>] <作業場のカタログ> <manifest.json か -> <profiles.yml> <出力先のフォルダ>
 
 fdl commit は SQL を持つテーブルの depends_on を、その SQL から作る。dbt で作ったテーブルの
 SQL (compiled_code) はカタログに残らないので、ここで manifest から `sql` を書き足す。
@@ -18,6 +18,9 @@ FDL_UNDESCRIBED=unlisted のときは、記述 (*.table.yml) の無いテーブ�
 掲載しない (`annotations.queria.published: false` を足す)。取り込んだままの元表や中間テーブルが
 数百あるデータセット向けで、データセットの scripts/build.sh が指定する。dbt を流さないビルドでも
 足せるように、manifest の代わりに `-` を受け取る。
+
+--previous は説明だけを変えたとき (ビルドを省いたとき) に使う。データは前のバージョンのままなので、
+SQL と catalogs も前のバージョンの dataset.json から取る。
 """
 
 from __future__ import annotations
@@ -161,6 +164,20 @@ def with_lineage(
     }
 
 
+def previous_lineage(described: dict[str, Any], live: set[Key]) -> tuple[dict[Key, str], dict[str, str]]:
+    """前のバージョンの dataset.json が持つ、カタログにある表の `sql` と `catalogs`。"""
+    sql = {
+        (str(t.get("schema", "")), str(t.get("name", ""))): t["sql"]
+        for t in described.get("tables") or []
+        if isinstance(t, dict) and isinstance(t.get("sql"), str) and t["sql"].strip()
+    }
+    aliases = described.get("catalogs")
+    return (
+        {key: code for key, code in sql.items() if key in live},
+        aliases if isinstance(aliases, dict) else {},
+    )
+
+
 def unlisted(declared: dict[str, Any], live: set[Key]) -> dict[str, Any]:
     """記述に無いテーブルとビューを、Queria に掲載しないものとして足す。書き手の値が勝つ。"""
     tables = declared.get("tables") or []
@@ -194,6 +211,9 @@ def stage(declared: dict[str, Any], root: Path, out: Path) -> Path:
 
 
 def main(argv: list[str]) -> int:
+    previous = None
+    if argv[:1] == ["--previous"] and len(argv) > 1:
+        previous, argv = Path(argv[1]), argv[2:]
     if len(argv) != 4:
         print(__doc__.splitlines()[2], file=sys.stderr)
         return 2
@@ -211,7 +231,10 @@ def main(argv: list[str]) -> int:
     # catalogs を知らない fdl (0.21 まで) は、知らないキーとして記述ごと断る
     aliases = catalogs(profiles or {}) if "catalogs" in dataset.DATASET_KEYS else {}
     live = live_relations(working)
-    declared = with_lineage(dataset.gather(description), compiled_sql(manifest, live), aliases)
+    sql = compiled_sql(manifest, live)
+    if previous is not None:
+        sql, aliases = previous_lineage(json.loads(previous.read_text(encoding="utf-8")), live)
+    declared = with_lineage(dataset.gather(description), sql, aliases)
     if os.environ.get("FDL_UNDESCRIBED") == "unlisted":
         declared = unlisted(declared, live)
     print(stage(declared, description.resolve().parent, out))
