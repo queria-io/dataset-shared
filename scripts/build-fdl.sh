@@ -138,9 +138,12 @@ export QUERIA_USER_AGENT
 # a version of the new description on the data apply holds, without running the
 # dataset's code: the data would come out the same (scripts/built_from.py). Each
 # version records the commit whose code made its data as a trailer of its message.
+# The check also writes apply's dataset.json, which the SQL and catalogs are taken from.
 built=
 if [ "${GITHUB_EVENT_NAME:-}" = push ]; then
-    built="$(uv run python "$(dirname "$0")/built_from.py" check "$remote")" || built=
+    built="$(uv run python "$(dirname "$0")/built_from.py" check "$remote" .fdl/previous.json)" || built=
+    # Anything but a commit (a stray line on stdout) builds.
+    [[ "$built" =~ ^[0-9a-f]{40}$ ]] || built=
 fi
 
 # 前に手元で回した dbt の manifest を読まないように、ビルドの前に消す
@@ -168,10 +171,7 @@ describe=()
 manifest=-
 previous=()
 [ -f target/manifest.json ] && manifest=target/manifest.json
-if [ -n "$built" ]; then
-    uv run python "$(dirname "$0")/built_from.py" described "$remote" .fdl/previous.json
-    previous=(--previous .fdl/previous.json)
-fi
+[ -n "$built" ] && previous=(--previous .fdl/previous.json)
 if [ "$manifest" != - ] || [ -n "$built" ] || [ "${FDL_UNDESCRIBED:-}" = unlisted ]; then
     described="$(uv run python "$(dirname "$0")/dbt_lineage.py" ${previous[@]+"${previous[@]}"} "$work" "$manifest" "${DBT_PROFILES_DIR:-.}/profiles.yml" .fdl/describe)"
     describe=(--dataset "$described")
@@ -225,7 +225,7 @@ if [ -n "$request" ]; then
     fi
     # queria prints the server's message ("apply already has open request #N"), not its code.
     out="$(QUERIA_API_URL="$api" uvx queria@latest dataset request create "$slug" --branch apply \
-        --title "${FDL_MESSAGE:-build}" --body "Built from ${GITHUB_REPOSITORY:-this repository}${GITHUB_SHA:+ at $GITHUB_SHA}" 2>&1)" \
+        --title "$message" --body "Built from ${GITHUB_REPOSITORY:-this repository}${GITHUB_SHA:+ at $GITHUB_SHA}" 2>&1)" \
         || case "$out" in *request_exists* | *"already has open request"*) echo "the open change request from apply now shows this build" >&2 ;; *) echo "$out" >&2; exit 1 ;; esac
     echo "$out"
 fi

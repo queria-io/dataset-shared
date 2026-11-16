@@ -3,8 +3,8 @@ repository changed nothing but the description.
 
 Usage:
   python built_from.py trailer               print the trailer that records this checkout (in GitHub Actions only)
-  python built_from.py check <remote>        print the commit apply was last built from, when only the description changed since
-  python built_from.py described <remote> <out>   write apply's dataset.json to <out>
+  python built_from.py check <remote> <out>  when only the description changed since apply was last built,
+                                            write apply's dataset.json to <out> and print the commit it was built from
 
 Each version the build makes records in its message the commit whose code made its
 data (`Built-From: <sha>`, a trailer as in Git). A version made from the description
@@ -20,22 +20,25 @@ import os
 import re
 import subprocess
 import sys
-from pathlib import Path
+from fnmatch import fnmatchcase
+from pathlib import Path, PurePosixPath
+
+from fdl import dataset
 
 TRAILER = "Built-From"
 _TRAILER = re.compile(rf"^{TRAILER}: ([0-9a-f]{{40}})$", re.MULTILINE)
 
 #: The files fdl commit reads the description from. Anything else may change the data.
-DESCRIPTION_FILES = ("dataset.yml", "dataset.yaml", "dataset.json", "README.md")
-DESCRIPTION_SUFFIXES = (".table.yml", ".table.yaml", ".table.json")
+DESCRIPTION_FILES = (*dataset.DEFAULT_FILES, "README.md")
 DESCRIPTION_DIR = "docs/"
 
 
 def is_description(path: str) -> bool:
     """Whether ``path`` (from the repository's root) only describes the dataset."""
+    name = PurePosixPath(path).name
     return (
         path in DESCRIPTION_FILES
-        or path.endswith(DESCRIPTION_SUFFIXES)
+        or any(fnmatchcase(name, pattern) for pattern in dataset.TABLE_FILES)
         or path.startswith(DESCRIPTION_DIR)
     )
 
@@ -44,12 +47,6 @@ def built_from(message: str) -> str | None:
     """The commit a version's message records, if any."""
     found = _TRAILER.findall(message)
     return found[-1] if found else None
-
-
-def with_trailer(message: str, sha: str) -> str:
-    """``message`` with the trailer for ``sha``, replacing any it held."""
-    body = _TRAILER.sub("", message).rstrip()
-    return f"{body}\n\n{TRAILER}: {sha}"
 
 
 def _git(*args: str) -> subprocess.CompletedProcess[str]:
@@ -76,14 +73,23 @@ def changed_since(sha: str) -> list[str] | None:
     head = checkout_commit()
     if head is None:
         return None
-    diff = _git("diff", "--name-only", sha, head)
+    # -z: paths as they are (not quoted, as core.quotePath does to non-ASCII names).
+    # --no-renames: a file moved keeps its old path in the list, so code moved under
+    # docs/ is not taken for a description.
+    diff = _git("diff", "--name-only", "--no-renames", "-z", sha, head)
     if diff.returncode:
         return None
-    return [line for line in diff.stdout.splitlines() if line]
+    return [path for path in diff.stdout.split("\0") if path]
 
 
-def description_only(store) -> str | None:
-    """The commit apply was built from, when the checkout changed only the description since."""
+def description_only(store, out: Path) -> str | None:
+    """The commit apply was built from, when the checkout changed only the description since.
+
+    Then apply's dataset.json, which the SQL and catalogs are taken from, is written
+    to ``out``. A push that changed nothing (an empty commit pushed to build again)
+    builds as before.
+    """
+    from fdl import diff as diffs
     from fdl import repo
 
     head = repo.head(store, "refs/heads/apply")
@@ -91,8 +97,13 @@ def description_only(store) -> str | None:
     if not sha:
         return None
     changed = changed_since(sha)
-    if changed is None or not all(map(is_description, changed)):
+    if not changed or not all(map(is_description, changed)):
         return None
+    described = diffs.described(store, head)
+    if not described:
+        print("apply has no dataset.json to take the SQL from: building", file=sys.stderr)
+        return None
+    out.write_bytes(dataset.to_json(described))
     return sha
 
 
@@ -102,25 +113,12 @@ def main(argv: list[str]) -> int:
         if sha:
             print(f"{TRAILER}: {sha}")
         return 0
-    if argv[:1] == ["check"] and len(argv) == 2:
+    if argv[:1] == ["check"] and len(argv) == 3:
         from fdl.stores import open_store
 
-        sha = description_only(open_store(argv[1]))
+        sha = description_only(open_store(argv[1]), Path(argv[2]))
         if sha:
             print(sha)
-        return 0
-    if argv[:1] == ["described"] and len(argv) == 3:
-        from fdl import diff as diffs
-        from fdl import dataset, repo
-        from fdl.stores import open_store
-
-        store = open_store(argv[1])
-        head = repo.head(store, "refs/heads/apply")
-        described = head and diffs.described(store, head)
-        if not described:
-            print("apply has no dataset.json to take the SQL from", file=sys.stderr)
-            return 1
-        Path(argv[2]).write_bytes(dataset.to_json(described))
         return 0
     print(__doc__.split("\n\n")[1], file=sys.stderr)
     return 2
