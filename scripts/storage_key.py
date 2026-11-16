@@ -30,7 +30,8 @@ a dataset DuckDB picks (another build's, or one a killed build left behind), it
 takes its next key through this build's config.
 
 Exit codes of `issue`: 0 printed the exports; 1 no key (no token, a remote
-outside Queria, or Queria refused): build through a local folder as before.
+outside Queria, Queria refused, or a DuckDB before 2.0, which cannot take a new
+key when one expires): build through a local folder as before.
 """
 
 from __future__ import annotations
