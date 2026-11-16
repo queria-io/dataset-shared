@@ -51,6 +51,9 @@ fi
 remote="${FDL_REMOTE:-https://data.queria.io/datasets/queria/$name/}"
 work=".fdl/work.sqlite"
 
+# The models follow the layers and the idempotency rules (README.md), or nothing is built.
+python3 "$(dirname "$0")/check_models.py" models
+
 # fdl clone writes the version's description (dataset.json and its files, such as
 # README.md) into the folder it runs in, unless dataset.json or dataset.yml is
 # there, and refuses when one of those files already is. The description here is
