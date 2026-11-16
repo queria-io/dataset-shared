@@ -8,7 +8,11 @@ runs it before the build, so a model that breaks a rule makes no version.
   by hand under reference/
 - stg refs raw only, mart refs stg or mart only, raw refs no stg or mart
 - an incremental model has a unique_key or an is_incremental() block, so building
-  the same input again adds no row twice
+  the same input again adds no row twice; incremental is set in the model's own
+  config(), not in dbt_project.yml or a .yml file, so this check can see it
+
+Only refs with a literal name are checked, and reads and refs inside macros are
+not followed.
 
 Usage: python check_models.py [models dir]   (default: models)
 Exit status 1 with one line per problem.
@@ -22,14 +26,23 @@ from pathlib import Path
 
 LAYERS = ("raw", "stg", "mart")
 # A read whose first argument is a path under reference/ (tables kept by hand) is allowed anywhere.
+# FROM 'data/x.parquet' (DuckDB's replacement scan) reads a file too.
 READS = re.compile(
-    r"\b(?:read_(?:parquet|csv|csv_auto|json|json_auto|json_objects|ndjson|ndjson_objects|text|blob|xlsx)|st_read)"
-    r"\s*\(\s*(?!\[?\s*'reference/)",
+    r"\b(?:read_(?:parquet|csv|csv_auto|json|json_auto|json_objects|ndjson|ndjson_objects|text|blob|xlsx)"
+    r"|parquet_scan|st_read)\s*\(\s*(?!\[?\s*'(?:\./)?reference/)"
+    r"|\b(?:from|join)\s+'(?!(?:\./)?reference/)[^']*\.(?:parquet|csv|tsv|json|jsonl|ndjson|xlsx|gpkg|geojson|shp)"
+    r"(?:\.gz|\.zst)?'",
     re.I,
 )
-REF = re.compile(r"\{\{\s*ref\(\s*['\"]([^'\"]+)['\"]\s*\)\s*\}\}")
+# Any ref with a literal name, also inside {%- ... %} or {{- ... -}}. A name built at
+# render time (ref('raw_' ~ y)) cannot be read here.
+REF = re.compile(r"\bref\(\s*['\"]([^'\"]+)['\"]\s*\)")
 INCREMENTAL = re.compile(r"materialized\s*=\s*['\"]incremental['\"]")
-COMMENT = re.compile(r"\{#.*?#\}|--[^\n]*|/\*.*?\*/", re.S)
+# Set in dbt_project.yml or a properties file, where the SQL check cannot see the key.
+INCREMENTAL_YML = re.compile(r"^\s*\+?materialized\s*:\s*['\"]?incremental\b", re.M)
+# String literals are kept, so a glob such as 'data/*/x' or '--' in a string is not
+# taken for the start of a comment.
+COMMENT = re.compile(r"('(?:[^']|'')*')|\{#.*?#\}|--[^\n]*|/\*.*?\*/", re.S)
 MAY_REF = {"raw": {"raw"}, "stg": {"raw"}, "mart": {"stg", "mart"}}
 
 
@@ -44,7 +57,7 @@ def problems(models: Path) -> list[str]:
     for f in files:
         rel = f.relative_to(models)
         own = layers[f.stem]
-        sql = COMMENT.sub("", f.read_text())
+        sql = COMMENT.sub(lambda m: m.group(1) or "", f.read_text())
         if own is None:
             found.append(f"{rel}: not in a raw, stg or mart folder")
             continue
@@ -57,6 +70,10 @@ def problems(models: Path) -> list[str]:
                 found.append(f"{rel}: {own} refs {other} model {name}")
         if INCREMENTAL.search(sql) and "unique_key" not in sql and "is_incremental()" not in sql:
             found.append(f"{rel}: incremental with no unique_key or is_incremental() filter")
+    for f in [models.parent / "dbt_project.yml", *sorted(models.rglob("*.yml"))]:
+        if f.is_file() and INCREMENTAL_YML.search(f.read_text()):
+            name = f.name if f.parent == models.parent else f.relative_to(models)
+            found.append(f"{name}: incremental set outside the model; set it in the model's config()")
     return found
 
 
