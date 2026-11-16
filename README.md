@@ -107,6 +107,7 @@ build_plans_parquet(user_agent=USER_AGENT, pdf_dir=Path("data/plans"), parquet_d
 - 手元では取得済みの URL を `pdf_dir/index.json` で覚えて取り直さない
 - 同じ URL に複数の名前があるときは、新しい年度のシートで最も多く書かれている名前を使う
 - サイトが移転してシートの URL が転送のお知らせになっているときは、`moved`（シートの URL の先頭 → 移転先の URL の先頭の辞書）を渡す。移転先が `hosts` のサイトになる URL も集め、移転先から取得する。`url` はシートの URL のまま、取得した URL は `fetched_url` に入る
+- 通常の HTTP クライアントでは取得できないサイトは、`fetch`（URL と保存先を受け、`fetch_file` と同じ形の行を返す関数。取得できない URL は `None`）を渡す。省くと `fetch_plan(user_agent)` で、`shared/fetch.py` の `fetch_file` を使う
 
 ### submodule の版を上げる
 
