@@ -25,7 +25,7 @@ from fdl import diff as diffs
 from fdl import merge as merging
 from fdl import objects
 from fdl import repo
-from fdl.stores import open_store
+from fdl.stores import StoreError, open_store
 
 FILLED = {"tables", "catalogs", "sql", "depends_on", "rows", "kind", "fields", "type", "nullable"}
 MISSING = object()
@@ -116,13 +116,24 @@ def is_empty(found: dict) -> bool:
     return not (found["keys"] or found["tables"] or found["tree"])
 
 
+def read_tree_file(store, sha256: str) -> bytes:
+    """A file of tree.json. fdl 0.32 keeps them under objects/; earlier versions wrote them under assets/."""
+    if hasattr(objects, "tree_key"):
+        try:
+            return store.get(objects.tree_key(sha256))
+        except StoreError as error:
+            if getattr(error, "status", None) != 404:
+                raise
+    return store.get(objects.asset_key(sha256))
+
+
 def write_version(store, version, folder: Path) -> None:
     """``version``'s dataset.json and the files of its tree.json, written into ``folder``."""
     folder.mkdir(parents=True)
     described = diffs.described(store, version) or {}
     (folder / "dataset.json").write_text(json.dumps(described, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     for entry in (diffs.listed(store, version) or {}).get("entries", []):
-        body = store.get(objects.asset_key(entry["sha256"]))
+        body = read_tree_file(store, entry["sha256"])
         if hashlib.sha256(body).hexdigest() != entry["sha256"]:
             raise SystemExit(f"{entry['path']}: the file's sha256 is not the one tree.json records")
         local = folder / objects.check_path(entry["path"])
