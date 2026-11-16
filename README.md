@@ -259,6 +259,18 @@ Gold にあたる層をデータセット側に持つと、用途の数だけテ
 - `raw` 以外でファイルを読む（`read_parquet`・`read_csv`・`st_read` など）。`reference/` の下のファイルは除く
 - `stg` が `raw` 以外を、`mart` が `stg`・`mart` 以外を、`raw` が `stg`・`mart` を `ref` で読む
 
+### モデルを消したとき
+
+ビルドは前のバージョンのカタログから始まるため、モデルを消す・改名する・`ephemeral` に変えると、
+前のテーブルがカタログに残る。`scripts/build-fdl.sh` はビルドのあとに `scripts/drop_stale.py` を実行し、
+dbt の `target/manifest.json` にあるモデル・seed・snapshot（`ephemeral` を除く）のどれにも当たらない
+テーブルとビューをカタログから削除して、削除したものをログに出す。次のスキーマのテーブルは削除しない。
+
+- dbt の source が読むスキーマ（パイプラインが取り込む `_source` など）
+- 名前が `_` で始まるスキーマ（dlt の `_source_staging` など）
+
+パイプラインがテーブルを書くときは、このどちらかのスキーマに書く。
+
 メダリオン（Bronze / Silver / Gold）と dbt のレイヤ（staging / intermediate / marts）は
 同じものの別名ではなく、直交する枠組み。メダリオンはストレージとデータフローの区切りで
 各層が実体を持ち、dbt のレイヤはモデル責務の区切りで ephemeral にすれば実体を持たない。
