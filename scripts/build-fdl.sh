@@ -173,6 +173,11 @@ if [ -n "$built" ]; then
     trailer="Built-From: $built"
 else
     uv run "$@"
+    # Each build starts from the last version: drop what no dbt model makes any more
+    # (a model removed, renamed or made ephemeral), or it stays in every later version.
+    if [ -f target/manifest.json ]; then
+        uv run python "$(dirname "$0")/drop_stale.py" target/manifest.json "$name"
+    fi
     trailer="$(uv run python "$(dirname "$0")/built_from.py" trailer)"
 fi
 
