@@ -82,13 +82,16 @@ fi
 # With FDL_DIRECT=1, new data files go straight to the dataset's storage when Queria
 # gives a key to its data files (the data_dir in fdl.json; write and read, no
 # delete): nothing stays on this machine, so a small disk can build a large
-# dataset. The key lasts minutes; DuckDB is meant to take a new one whenever
-# storage refuses the old (scripts/storage_key.py). It is off by default: dbt
-# runs tens of times slower against storage than against a local folder, and
-# builds past an hour fail with 403 SignatureDoesNotMatch when reading files
-# written with an earlier key. By default clone keeps new files in a local
-# folder that the commit uploads.
+# dataset. The key lasts minutes; DuckDB takes a new one whenever storage refuses
+# the old (scripts/storage_key.py). DuckDB before 2.0 cannot, so the build takes
+# the latest DuckDB here, and storage_key.py gives no key to an older one. It is
+# off by default: dbt runs tens of times slower against storage than against a
+# local folder. By default clone keeps new files in a local folder that the
+# commit uploads.
 storage=()
+if [ "${FDL_DIRECT:-0}" = 1 ]; then
+    uv lock --quiet --upgrade-package duckdb
+fi
 if [ "${FDL_DIRECT:-0}" = 1 ] \
     && keys="$(uv run python "$(dirname "$0")/storage_key.py" issue "$remote")"; then
     eval "$keys"

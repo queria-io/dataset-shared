@@ -195,6 +195,24 @@ class StorageKeyTest(unittest.TestCase):
         with mock.patch.dict("os.environ", {}, clear=True):
             self.assertEqual(storage_key.issue(REMOTE), 1)
 
+    def test_duckdb_2_or_later_refreshes(self):
+        for version, expected in (
+            ("1.5.3", False), ("1.10.0", False), ("2.0.0", True), ("2.0.1.dev2611091707", True), ("3.0.0", True),
+        ):
+            with self.subTest(version=version):
+                self.assertEqual(storage_key.refreshes(version), expected)
+
+    def test_a_duckdb_that_cannot_refresh_gets_no_key(self):
+        import duckdb
+
+        err = io.StringIO()
+        with mock.patch.dict("os.environ", {"FDL_TOKEN": "t"}, clear=True), \
+                mock.patch.object(duckdb, "__version__", "1.5.3"), \
+                mock.patch.object(storage_key, "request", side_effect=AssertionError("asked Queria")), \
+                contextlib.redirect_stderr(err):
+            self.assertEqual(storage_key.issue(REMOTE), 1)
+        self.assertIn("DuckDB 1.5.3", err.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

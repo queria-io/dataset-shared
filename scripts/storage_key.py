@@ -58,6 +58,16 @@ PROFILE = "fdl_build"
 MAX_WAIT = 15 * 60
 #: Where each data host's API is.
 API = {"data.queria.io": "https://queria.io"}
+#: The first DuckDB that takes a new key for a persistent secret. Before it, the
+#: refresh fails ("Cannot create temporary secrets in a persistent secret storage"),
+#: the build keeps the expired key, and storage refuses it with 403.
+REFRESHES_FROM = (2, 0)
+
+
+def refreshes(version: str) -> bool:
+    """Whether DuckDB ``version`` takes a new key for a persistent secret."""
+    parts = re.findall(r"\d+", version)[:2]
+    return tuple(int(part) for part in parts) >= REFRESHES_FROM
 
 
 def api_url(remote: str) -> str | None:
@@ -201,6 +211,21 @@ def credential_process(remote: str, first: Path | None = None) -> int:
 
 
 def issue(remote: str) -> int:
+    # Checked before asking Queria, so that a build that cannot use the key does
+    # not hold one of the account's live keys.
+    try:
+        import duckdb
+    except ImportError as exc:
+        print(f"storage key: none ({exc}); building through a local folder", file=sys.stderr)
+        return 1
+    if not refreshes(duckdb.__version__):
+        needed = ".".join(map(str, REFRESHES_FROM))
+        print(
+            f"storage key: none (DuckDB {duckdb.__version__} cannot take a new key when one expires; "
+            f"{needed} or later can); building through a local folder",
+            file=sys.stderr,
+        )
+        return 1
     try:
         answer = _ask(remote)
         if answer is None:
@@ -208,11 +233,6 @@ def issue(remote: str) -> int:
         storage = storage_of(answer)
         key = json.dumps(key_of(answer))
     except (urllib.error.URLError, OSError, KeyError, ValueError) as exc:
-        print(f"storage key: none ({exc}); building through a local folder", file=sys.stderr)
-        return 1
-    try:
-        import duckdb
-    except ImportError as exc:
         print(f"storage key: none ({exc}); building through a local folder", file=sys.stderr)
         return 1
 
