@@ -106,5 +106,36 @@ class PlanUrlsTest(unittest.TestCase):
             review_plans.plan_urls(HOSTS, "test")
 
 
+class DownloadPlansTest(unittest.TestCase):
+    def test_fetch(self):
+        def fetch(url: str, path: Path) -> dict | None:
+            if url.endswith("gone.pdf"):
+                return None
+            path.write_bytes(b"%PDF-1.7")
+            return {
+                "sha256": "abc",
+                "retrieved_at": "2026-11-17T00:00:00+00:00",
+                "media_type": "application/pdf",
+                "etag": None,
+                "last_modified": None,
+            }
+
+        urls = {
+            "https://www.mlit.go.jp/a.pdf": "通知",
+            "https://www.mlit.go.jp/gone.pdf": "消えた資料",
+        }
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch.object(review_plans, "plan_urls", return_value=urls),
+            mock.patch.object(review_plans, "INTERVAL", 0),
+        ):
+            pdf_dir = Path(tmp)
+            review_plans.download_plans(HOSTS, user_agent="test", pdf_dir=pdf_dir, fetch=fetch)
+            index = review_plans.read_index(pdf_dir)
+            self.assertEqual(list(index), ["https://www.mlit.go.jp/a.pdf"])
+            self.assertEqual(index["https://www.mlit.go.jp/a.pdf"]["sha256"], "abc")
+            self.assertTrue((pdf_dir / "abc.pdf").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

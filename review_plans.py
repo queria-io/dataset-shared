@@ -8,6 +8,8 @@
     download_plans(HOSTS, user_agent=USER_AGENT, pdf_dir=Path("data/plans"))
     # 移転したページは、シートの URL の先頭を移転先に置き換えて取得する
     download_plans(HOSTS, user_agent=USER_AGENT, pdf_dir=Path("data/plans"), moved={"https://old/": "https://new/"})
+    # 取得の方法を変えるときは fetch に関数を渡す（url と保存先を受け、fetch_file と同じ形の行か None を返す）
+    download_plans(HOSTS, user_agent=USER_AGENT, pdf_dir=Path("data/plans"), fetch=my_fetch)
     build_plans_parquet(user_agent=USER_AGENT, pdf_dir=Path("data/plans"), parquet_dir=Path("data/parquet"))
 
 1. 行政事業レビュー見える化サイト（https://rssystem.go.jp）のシートをテーブルにした Queria の公開データセット
@@ -29,7 +31,7 @@ import os
 import re
 import time
 from collections import Counter, defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from http.client import InvalidURL
 from pathlib import Path
 from urllib.error import HTTPError
@@ -46,6 +48,28 @@ logger = logging.getLogger("pipelines")
 # 行政事業レビュー見える化サイトから直接 CSV を取ると、GitHub のランナーによっては画面の HTML が返るので、こちらを読む
 RSSYSTEM = "ducklake:https://data.queria.io/datasets/queria/rssystem/metadata.db"
 INTERVAL = 1.0
+
+# URL を path に取得し、fetch_file と同じ形の行を返す。取得できない URL（リンク切れなど）は None を返す
+Fetch = Callable[[str, Path], dict | None]
+
+
+def fetch_plan(user_agent: str) -> Fetch:
+    """shared/fetch.py の fetch_file で取得する。4xx と送れない URL は None、5xx はそのまま止める。"""
+
+    def fetch(url: str, path: Path) -> dict | None:
+        try:
+            return fetch_file(url, path, user_agent=user_agent)
+        except HTTPError as error:
+            # 404 以外のクライアントエラー（403・410 など）もリンク切れとして扱う。
+            # 5xx は再試行しても失敗したときにそのまま止める
+            if error.code >= 500:
+                raise
+            return None
+        except InvalidURL:
+            # シートの URL に空白などが入っていて、要求を送れない
+            return None
+
+    return fetch
 
 
 def review_rows(user_agent: str) -> dict[int, list[dict]]:
@@ -120,8 +144,13 @@ def download_plans(
     user_agent: str,
     pdf_dir: Path,
     moved: Mapping[str, str] | None = None,
+    fetch: Fetch | None = None,
 ) -> None:
-    """PDF を pdf_dir/<sha256>.pdf に置き、シートの URL → sha256・名前・取得した URL・取得日時を pdf_dir/index.json に書く。"""
+    """PDF を pdf_dir/<sha256>.pdf に置き、シートの URL → sha256・名前・取得した URL・取得日時を pdf_dir/index.json に書く。
+
+    fetch を渡すと、PDF をその関数で取得する。省くと fetch_plan(user_agent)。
+    """
+    fetch = fetch or fetch_plan(user_agent)
     pdf_dir.mkdir(parents=True, exist_ok=True)
     urls = plan_urls(hosts, user_agent, moved)
     # シートから消えた URL は外す
@@ -134,17 +163,7 @@ def download_plans(
             fetched_url = relocate(url, moved)
             time.sleep(INTERVAL)
             partial = pdf_dir / "fetching.pdf"
-            try:
-                source = fetch_file(fetched_url, partial, user_agent=user_agent)
-            except HTTPError as error:
-                # 404 以外のクライアントエラー（403・410 など）もリンク切れとして扱う。
-                # 5xx は再試行しても失敗したときにそのまま止める
-                if error.code >= 500:
-                    raise
-                source = None
-            except InvalidURL:
-                # シートの URL に空白などが入っていて、要求を送れない
-                source = None
+            source = fetch(fetched_url, partial)
             if source is None:
                 logger.info("plans: 取得できない: %s", fetched_url)
                 continue
