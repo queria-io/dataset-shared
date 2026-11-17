@@ -3,6 +3,7 @@
 実行: python -m unittest discover -s tests
 """
 
+import json
 import os
 import subprocess
 import sys
@@ -36,14 +37,29 @@ class DescriptionTest(unittest.TestCase):
             self.assertFalse(built_from.is_description(path), path)
 
 
-class TrailerTest(unittest.TestCase):
-    def test_reads_the_last_trailer(self):
-        message = f"build\n\nBuilt-From: {'f' * 40}\nBuilt-From: {SHA}"
-        self.assertEqual(built_from.built_from(message), SHA)
+def _version(message="build", annotations=None):
+    return mock.Mock(message=message, annotations=annotations or {})
 
-    def test_no_trailer(self):
-        self.assertIsNone(built_from.built_from("build"))
-        self.assertIsNone(built_from.built_from("Built-From: abc"))
+
+class BuiltFromTest(unittest.TestCase):
+    def test_reads_the_annotation(self):
+        version = _version(f"build\n\nBuilt-From: {'f' * 40}", {"queria": {"built_from": {"commit": SHA}}})
+        self.assertEqual(built_from.built_from(version), SHA)
+
+    def test_reads_the_last_trailer_of_an_older_version(self):
+        self.assertEqual(built_from.built_from(_version(f"build\n\nBuilt-From: {'f' * 40}\nBuilt-From: {SHA}")), SHA)
+
+    def test_nothing_recorded(self):
+        self.assertIsNone(built_from.built_from(_version()))
+        self.assertIsNone(built_from.built_from(_version("Built-From: abc")))
+        self.assertIsNone(built_from.built_from(_version(annotations={"queria": {"built_from": {"commit": "abc"}}})))
+
+    def test_annotation(self):
+        with mock.patch.dict(os.environ, {"GITHUB_REPOSITORY": "o/r"}):
+            name, _, value = built_from.annotation(SHA).partition("=")
+        self.assertEqual(name, "queria")
+        self.assertEqual(json.loads(value), {"built_from": {"repository": "o/r", "commit": SHA}})
+        self.assertNotIn(" ", value)
 
 
 class ChangedSinceTest(unittest.TestCase):
@@ -109,7 +125,7 @@ class DescriptionOnlyTest(unittest.TestCase):
     """Whether to skip, given the paths changed since the commit apply records."""
 
     def _check(self, changed):
-        head = mock.Mock(message=f"build\n\nBuilt-From: {SHA}")
+        head = _version(annotations={"queria": {"built_from": {"commit": SHA}}})
         with tempfile.TemporaryDirectory() as tmp, \
                 mock.patch("fdl.repo.head", return_value=head), \
                 mock.patch("fdl.diff.described", return_value={"name": "x"}), \

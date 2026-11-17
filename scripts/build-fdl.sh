@@ -157,7 +157,7 @@ export QUERIA_USER_AGENT
 # A push to main that changed only the description since apply's last build makes
 # a version of the new description on the data apply holds, without running the
 # dataset's code: the data would come out the same (scripts/built_from.py). Each
-# version records the commit whose code made its data as a trailer of its message.
+# version records the commit whose code made its data in its annotations.
 # The check also writes apply's dataset.json, which the SQL and catalogs are taken from.
 built=
 if [ "${GITHUB_EVENT_NAME:-}" = push ]; then
@@ -170,7 +170,7 @@ fi
 rm -f target/manifest.json
 if [ -n "$built" ]; then
     echo "only the description changed since the build from $built: not running the build"
-    trailer="Built-From: $built"
+    annotation="$(uv run python "$(dirname "$0")/built_from.py" annotation "$built")"
 else
     uv run "$@"
     # Each build starts from the last version: drop what no dbt model makes any more
@@ -178,7 +178,7 @@ else
     if [ -f target/manifest.json ]; then
         uv run python "$(dirname "$0")/drop_stale.py" target/manifest.json "$name"
     fi
-    trailer="$(uv run python "$(dirname "$0")/built_from.py" trailer)"
+    annotation="$(uv run python "$(dirname "$0")/built_from.py" annotation)"
 fi
 
 # Queria's checks before the version is made (licenses, themes, join keys and each
@@ -196,7 +196,7 @@ uvx queria@latest metadata pack "${pack[@]}"
 
 author="${FDL_AUTHOR:-$(git config user.name || echo build)}"
 message="${FDL_MESSAGE:-$([ -n "$built" ] && echo "Update the description" || echo build)}"
-uv run fdl commit "$work" -m "$message${trailer:+$'\n\n'$trailer}" --author "$author" --dataset .fdl/pack/dataset.json ${FDL_ASSETS:+--assets "$FDL_ASSETS"}
+uv run fdl commit "$work" -m "$message" --author "$author" --dataset .fdl/pack/dataset.json ${FDL_ASSETS:+--assets "$FDL_ASSETS"} ${annotation:+--annotation "$annotation"}
 uv run fdl push "$work"
 
 # Bring apply into main, or ask people to. main is judged at the version its

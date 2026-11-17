@@ -2,16 +2,18 @@
 repository changed nothing but the description.
 
 Usage:
-  python built_from.py trailer               print the trailer that records this checkout (in GitHub Actions only)
+  python built_from.py annotation [<sha>]    print the fdl commit --annotation that records <sha>, else this checkout (in GitHub Actions only)
   python built_from.py check <remote> <out>  when only the description changed since apply was last built,
                                             write apply's dataset.json to <out> and print the commit it was built from
 
-Each version the build makes records in its message the commit whose code made its
-data (`Built-From: <sha>`, a trailer as in Git). A version made from the description
-alone keeps the commit of the build before it, so the head of apply always tells
-which code its data came from. When the repository changed only description files
-since that commit, the data would come out the same: the build commits the new
-description on the data it already has.
+Each version the build makes records in its annotations the repository and commit
+whose code made its data (`annotations.queria.built_from`). A version made from the
+description alone keeps the commit of the build before it, so the head of apply
+always tells which code its data came from. Versions made before this recorded it in
+their message (`Built-From: <sha>`, a trailer as in Git), which is still read.
+When the repository changed only description files since that commit, the data
+would come out the same: the build commits the new description on the data it
+already has.
 """
 
 from __future__ import annotations
@@ -24,8 +26,12 @@ import sys
 from fnmatch import fnmatchcase
 from pathlib import Path, PurePosixPath
 
-TRAILER = "Built-From"
-_TRAILER = re.compile(rf"^{TRAILER}: ([0-9a-f]{{40}})$", re.MULTILINE)
+#: The name of the annotations Queria reads, and the key of the commit in them.
+ANNOTATION = "queria"
+KEY = "built_from"
+_SHA = re.compile(r"[0-9a-f]{40}")
+#: Where versions made before the annotation recorded it: the last line of the message.
+_TRAILER = re.compile(r"^Built-From: ([0-9a-f]{40})$", re.MULTILINE)
 
 #: The files queria metadata pack reads the description from (queria.yml, and the
 #: older dataset.yml). Anything else may change the data.
@@ -45,10 +51,22 @@ def is_description(path: str) -> bool:
     )
 
 
-def built_from(message: str) -> str | None:
-    """The commit a version's message records, if any."""
-    found = _TRAILER.findall(message)
+def built_from(version) -> str | None:
+    """The commit a version records, in its annotations or else (an older version) its message."""
+    recorded = ((version.annotations or {}).get(ANNOTATION) or {}).get(KEY) or {}
+    commit = recorded.get("commit") if isinstance(recorded, dict) else None
+    if isinstance(commit, str) and _SHA.fullmatch(commit):
+        return commit
+    found = _TRAILER.findall(version.message)
     return found[-1] if found else None
+
+
+def annotation(sha: str) -> str:
+    """The `fdl commit --annotation` that records ``sha`` and the repository it is in."""
+    recorded = {"commit": sha}
+    if os.environ.get("GITHUB_REPOSITORY"):
+        recorded = {"repository": os.environ["GITHUB_REPOSITORY"], **recorded}
+    return f"{ANNOTATION}={json.dumps({KEY: recorded}, separators=(",", ":"))}"
 
 
 def _git(*args: str) -> subprocess.CompletedProcess[str]:
@@ -63,7 +81,7 @@ def checkout_commit() -> str | None:
     uv.lock (it upgrades queria and fdl-cli), which is not the code it builds.
     """
     sha = os.environ.get("GITHUB_SHA", "") if os.environ.get("GITHUB_ACTIONS") else ""
-    return sha if re.fullmatch(r"[0-9a-f]{40}", sha) else None
+    return sha if _SHA.fullmatch(sha) else None
 
 
 def changed_since(sha: str) -> list[str] | None:
@@ -95,7 +113,7 @@ def description_only(store, out: Path) -> str | None:
     from fdl import repo
 
     head = repo.head(store, "refs/heads/apply")
-    sha = head and built_from(head.message)
+    sha = head and built_from(head)
     if not sha:
         return None
     changed = changed_since(sha)
@@ -110,10 +128,10 @@ def description_only(store, out: Path) -> str | None:
 
 
 def main(argv: list[str]) -> int:
-    if argv[:1] == ["trailer"] and len(argv) == 1:
-        sha = checkout_commit()
+    if argv[:1] == ["annotation"] and len(argv) <= 2:
+        sha = argv[1] if len(argv) == 2 else checkout_commit()
         if sha:
-            print(f"{TRAILER}: {sha}")
+            print(annotation(sha))
         return 0
     if argv[:1] == ["check"] and len(argv) == 3:
         from fdl.stores import open_store
