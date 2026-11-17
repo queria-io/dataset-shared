@@ -53,6 +53,11 @@ class BuiltFromTest(unittest.TestCase):
         self.assertIsNone(built_from.built_from(_version()))
         self.assertIsNone(built_from.built_from(_version("Built-From: abc")))
         self.assertIsNone(built_from.built_from(_version(annotations={"queria": {"built_from": {"commit": "abc"}}})))
+        self.assertIsNone(built_from.built_from(_version(annotations={"queria": "x"})))
+        self.assertIsNone(built_from.built_from(_version(annotations={"queria": {"built_from": "x"}})))
+
+    def test_annotation_takes_only_a_commit(self):
+        self.assertEqual(built_from.main(["annotation", "abc"]), 2)
 
     def test_annotation(self):
         with mock.patch.dict(os.environ, {"GITHUB_REPOSITORY": "o/r"}):

@@ -30,7 +30,7 @@ from pathlib import Path, PurePosixPath
 ANNOTATION = "queria"
 KEY = "built_from"
 _SHA = re.compile(r"[0-9a-f]{40}")
-#: Where versions made before the annotation recorded it: the last line of the message.
+#: Where versions made before the annotation recorded it: a line of the message (the last one wins).
 _TRAILER = re.compile(r"^Built-From: ([0-9a-f]{40})$", re.MULTILINE)
 
 #: The files queria metadata pack reads the description from (queria.yml, and the
@@ -53,8 +53,9 @@ def is_description(path: str) -> bool:
 
 def built_from(version) -> str | None:
     """The commit a version records, in its annotations or else (an older version) its message."""
-    recorded = ((version.annotations or {}).get(ANNOTATION) or {}).get(KEY) or {}
-    commit = recorded.get("commit") if isinstance(recorded, dict) else None
+    commit = version.annotations or {}
+    for key in (ANNOTATION, KEY, "commit"):
+        commit = commit.get(key) if isinstance(commit, dict) else None
     if isinstance(commit, str) and _SHA.fullmatch(commit):
         return commit
     found = _TRAILER.findall(version.message)
@@ -130,6 +131,9 @@ def description_only(store, out: Path) -> str | None:
 def main(argv: list[str]) -> int:
     if argv[:1] == ["annotation"] and len(argv) <= 2:
         sha = argv[1] if len(argv) == 2 else checkout_commit()
+        if len(argv) == 2 and not _SHA.fullmatch(sha):
+            print(f"not a commit: {sha!r}", file=sys.stderr)
+            return 2
         if sha:
             print(annotation(sha))
         return 0
