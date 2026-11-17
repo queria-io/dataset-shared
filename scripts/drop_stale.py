@@ -11,7 +11,10 @@ Kept:
   as _source), and every table in a schema whose name starts with _ (dlt's
   _source_staging and the like)
 
-Everything else in the dataset's own catalog is dropped and printed.
+Everything else in the dataset's own catalog is dropped and printed, and so is a
+schema that holds nothing afterwards. Names are compared without case, as DuckDB
+looks them up: a table whose name differs from its model's only in case is the
+model's table.
 
 Usage: python drop_stale.py <target/manifest.json> <catalog name>
 The catalog is attached from FDL_WORKING and FDL_DATA_PATH, as profiles.yml does.
@@ -31,14 +34,14 @@ def kept(manifest: dict, catalog: str) -> tuple[set[tuple[str, str]], set[str]]:
     """The (schema, name) the project makes in the catalog, and the schemas its sources read."""
     nodes = manifest.get("nodes", {}).values()
     relations = {
-        (n["schema"], n.get("alias") or n["name"])
+        (n["schema"].lower(), (n.get("alias") or n["name"]).lower())
         for n in nodes
         if n.get("resource_type") in BUILT
         and n.get("database") == catalog
         and n.get("config", {}).get("materialized") != "ephemeral"
     }
     sources = {
-        s["schema"] for s in manifest.get("sources", {}).values() if s.get("database") == catalog
+        s["schema"].lower() for s in manifest.get("sources", {}).values() if s.get("database") == catalog
     }
     return relations, sources
 
@@ -50,8 +53,28 @@ def stale(
     return sorted(
         (schema, name, kind)
         for schema, name, kind in existing
-        if (schema, name) not in relations and schema not in sources and not schema.startswith("_")
+        if (schema.lower(), name.lower()) not in relations and not _protected(schema, sources)
     )
+
+
+def empty(
+    schemas: list[str],
+    left: list[tuple[str, str, str]],
+    relations: set[tuple[str, str]],
+    sources: set[str],
+) -> list[str]:
+    """The schemas that hold nothing in ``left`` and that no node writes to."""
+    used = {schema.lower() for schema, _, _ in left} | {schema for schema, _ in relations}
+    return sorted(
+        schema
+        for schema in schemas
+        if schema.lower() not in used and schema.lower() != "main" and not _protected(schema, sources)
+    )
+
+
+def _protected(schema: str, sources: set[str]) -> bool:
+    """A schema a source reads, or one whose name starts with _: the pipelines write there."""
+    return schema.lower() in sources or schema.startswith("_")
 
 
 def quote(name: str) -> str:
@@ -82,9 +105,23 @@ def main(manifest_path: str, catalog: str) -> None:
         "WHERE database_name = ? AND NOT internal",
         [catalog, catalog],
     ).fetchall()
-    for schema, name, kind in stale(existing, relations, sources):
+    schemas = [
+        row[0]
+        for row in con.execute(
+            "SELECT schema_name FROM duckdb_schemas() WHERE database_name = ? AND NOT internal", [catalog]
+        ).fetchall()
+    ]
+    dropped = stale(existing, relations, sources)
+    left = [entry for entry in existing if entry not in dropped]
+    # One transaction: the drops make one snapshot, and a failed drop leaves the catalog as it was.
+    con.execute("BEGIN")
+    for schema, name, kind in dropped:
         con.execute(f"DROP {kind} {quote(catalog)}.{quote(schema)}.{quote(name)}")
         print(f"dropped {kind.lower()} {schema}.{name}: no dbt model makes it")
+    for schema in empty(schemas, left, relations, sources):
+        con.execute(f"DROP SCHEMA {quote(catalog)}.{quote(schema)}")
+        print(f"dropped schema {schema}: no dbt model writes to it")
+    con.execute("COMMIT")
 
 
 if __name__ == "__main__":

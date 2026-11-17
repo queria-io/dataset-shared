@@ -16,13 +16,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import drop_stale  # noqa: E402
 
 
-def node(kind: str, schema: str, name: str, materialized: str = "table", database: str = "ds", **extra) -> dict:
+def node(
+    kind: str, schema: str, name: str, materialized: str = "table", database: str = "ds", alias: str | None = None
+) -> dict:
     return {
         "resource_type": kind,
         "database": database,
         "schema": schema,
         "name": name,
-        "alias": extra.get("alias", name),
+        "alias": alias or name,
         "config": {"materialized": materialized},
     }
 
@@ -55,6 +57,7 @@ class KeptTest(unittest.TestCase):
         existing = [
             ("a", "x", "TABLE"),
             ("a", "y", "VIEW"),
+            ("A", "X", "TABLE"),  # the same table as a.x to DuckDB
             ("a", "stg_x", "TABLE"),  # made ephemeral
             ("a", "removed", "VIEW"),
             ("main", "codes", "TABLE"),
@@ -69,6 +72,12 @@ class KeptTest(unittest.TestCase):
             [("a", "removed", "VIEW"), ("a", "stg_x", "TABLE"), ("metricflow", "time_spine", "TABLE")],
         )
 
+    def test_empty(self):
+        relations, sources = drop_stale.kept(MANIFEST, "ds")
+        left = [("a", "x", "TABLE")]
+        schemas = ["a", "main", "metricflow", "_source", "_source_staging", "pipe", "Old"]
+        self.assertEqual(drop_stale.empty(schemas, left, relations, sources), ["Old", "metricflow"])
+
 
 class DuckLakeTest(unittest.TestCase):
     def test_drops_from_the_catalog(self):
@@ -82,6 +91,8 @@ class DuckLakeTest(unittest.TestCase):
             for sql in [
                 "CREATE SCHEMA ds.a",
                 "CREATE SCHEMA ds._source",
+                "CREATE SCHEMA ds.old",
+                "CREATE TABLE ds.old.t AS SELECT 1 AS v",
                 "CREATE TABLE ds.a.x AS SELECT 1 AS v",
                 "CREATE TABLE ds.a.stg_x AS SELECT 1 AS v",
                 "CREATE VIEW ds.a.removed AS SELECT 1 AS v",
@@ -104,6 +115,10 @@ class DuckLakeTest(unittest.TestCase):
                 "AND NOT internal ORDER BY 1"
             ).fetchall()
             self.assertEqual([r[0] for r in left], ["_source.loaded", "a.x"])
+            schemas = con.execute(
+                "SELECT schema_name FROM duckdb_schemas() WHERE database_name = 'ds' AND NOT internal ORDER BY 1"
+            ).fetchall()
+            self.assertEqual([r[0] for r in schemas], ["_source", "a", "main"])
 
 
 if __name__ == "__main__":
