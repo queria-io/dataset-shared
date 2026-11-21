@@ -144,7 +144,7 @@ jobs:
 
 Queria の照合は、SHA で固定したワークフローもパスが登録と同じなら通す。
 
-`secrets: inherit` は使わない。inherit はリポジトリのシークレットを全部渡すので、使うものだけを明示的に渡す。取得元の API キー（`ESTAT_API_KEY`・`REINFOLIB_API_KEY`・`EDINET_API_KEY`・`GBIZINFO_API_TOKEN`）は、使うデータセットだけが追加する。
+`secrets: inherit` は使わない。inherit はリポジトリのシークレットを全部渡すので、使うものだけを明示的に渡す。取得元の API キー（`ESTAT_API_KEY`・`REINFOLIB_API_KEY`・`EDINET_API_KEY`・`GBIZINFO_API_TOKEN`・`HOUJIN_BANGOU_APP_ID`）は、使うデータセットだけが追加する。
 
 手元で流すときは `FDL_TOKEN` か `queria login` を使います。
 
