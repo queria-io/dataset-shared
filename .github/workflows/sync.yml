@@ -103,12 +103,6 @@ jobs:
       # scripts/build-fdl.sh が OIDC で 1 時間のトークンを取る (scripts/queria_token.py)。
       # 交換できなければビルドは止まる。permissions をここに書くと、渡していない
       # 呼び出し側の run が起動時に落ちるので書かない
-      ESTAT_API_KEY: ${{ secrets.ESTAT_API_KEY }}
-      REINFOLIB_API_KEY: ${{ secrets.REINFOLIB_API_KEY }}
-      EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
-      GBIZINFO_API_TOKEN: ${{ secrets.GBIZINFO_API_TOKEN }}
-      HOUJIN_BANGOU_APP_ID: ${{ secrets.HOUJIN_BANGOU_APP_ID }}
-      SYNC_MODE: ${{ inputs.mode }}
     steps:
       - name: Free disk space
         if: inputs.free_disk
@@ -141,7 +135,16 @@ jobs:
           uv lock --upgrade-package queria --upgrade-package fdl-cli
           uv sync
 
+      # 取得元の API キーはこの手順にだけ渡す。job の env に置くと、checkout・setup-uv・
+      # 依存のインストール・import-pr の手順からも読める
       - name: Build and push
+        env:
+          ESTAT_API_KEY: ${{ secrets.ESTAT_API_KEY }}
+          REINFOLIB_API_KEY: ${{ secrets.REINFOLIB_API_KEY }}
+          EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
+          GBIZINFO_API_TOKEN: ${{ secrets.GBIZINFO_API_TOKEN }}
+          HOUJIN_BANGOU_APP_ID: ${{ secrets.HOUJIN_BANGOU_APP_ID }}
+          SYNC_MODE: ${{ inputs.mode }}
         run: scripts/build.sh
 
       # The description changed on Queria, which the build wrote into the checkout,
