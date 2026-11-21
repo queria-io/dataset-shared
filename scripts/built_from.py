@@ -35,9 +35,13 @@ DESCRIPTION_FILES = ("queria.yml", "dataset.yml")
 #: Markdown anywhere (the tables' files, README.md, documents) and the older table files.
 DESCRIPTION_PATTERNS = ("*.md", "*.table.yml")
 DESCRIPTION_DIR = "docs/"
-#: The workflows and the other GitHub settings: when and how the build runs, not what
-#: it makes. The shared submodule is outside: its scripts make the data.
+#: The GitHub settings. A workflow also passes the build its inputs (secrets, mode,
+#: the runner, the pinned shared workflow), so it keeps the data only when its jobs
+#: changed nothing but the time limit. The shared submodule is outside: its scripts
+#: make the data.
 CI_DIR = ".github/"
+WORKFLOWS_DIR = ".github/workflows/"
+TIME_LIMITS = ("timeout_minutes", "timeout-minutes")
 
 
 def is_description(path: str) -> bool:
@@ -50,9 +54,42 @@ def is_description(path: str) -> bool:
     )
 
 
-def keeps_data(path: str) -> bool:
-    """Whether a change to ``path`` leaves the data as it is: the description or .github/."""
-    return is_description(path) or path.startswith(CI_DIR)
+def _without_time_limits(value):
+    if isinstance(value, dict):
+        return {k: _without_time_limits(v) for k, v in value.items() if k not in TIME_LIMITS}
+    if isinstance(value, list):
+        return [_without_time_limits(v) for v in value]
+    return value
+
+
+def _jobs(sha: str, path: str):
+    """A workflow's jobs at ``sha``, without their time limits; None when it cannot be read."""
+    import yaml
+
+    shown = _git("show", f"{sha}:{path}")
+    if shown.returncode:
+        return None
+    try:
+        workflow = yaml.safe_load(shown.stdout)
+    except yaml.YAMLError:
+        return None
+    return _without_time_limits(workflow.get("jobs")) if isinstance(workflow, dict) else None
+
+
+def keeps_data(path: str, before: str, after: str) -> bool:
+    """Whether the change to ``path`` between two commits leaves the data as it is.
+
+    The description does, and .github/ does except a workflow whose jobs changed
+    more than their time limit (when, not what, the build runs).
+    """
+    if is_description(path):
+        return True
+    if not path.startswith(CI_DIR):
+        return False
+    if not path.startswith(WORKFLOWS_DIR):
+        return True
+    jobs = _jobs(before, path)
+    return jobs is not None and jobs == _jobs(after, path)
 
 
 def built_from(message: str) -> str | None:
@@ -109,7 +146,8 @@ def description_only(store, out: Path) -> str | None:
     if not sha:
         return None
     changed = changed_since(sha)
-    if not changed or not all(map(keeps_data, changed)):
+    checkout = checkout_commit()
+    if not changed or checkout is None or not all(keeps_data(path, sha, checkout) for path in changed):
         return None
     described = diffs.described(store, head)
     if not described:
