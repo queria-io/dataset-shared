@@ -196,12 +196,22 @@ fi
 pack=(--quiet --profiles "${DBT_PROFILES_DIR:-.}/profiles.yml" --out .fdl/pack)
 [ -n "$built" ] && pack+=(--base .fdl/previous.json)
 [ "${FDL_UNDESCRIBED:-}" = unlisted ] && pack+=(--unlisted)
-[ -n "${FDL_ASSETS:-}" ] && pack+=(--assets "$FDL_ASSETS")
+# A queria from before _meta writes the description into .fdl/pack/dataset.json and
+# its files beside it, and takes no --assets: then FDL_ASSETS goes to fdl commit as
+# it is. Kept until every dataset builds with a queria that writes _meta.
+meta=
+case "$(uvx queria@latest metadata pack --help)" in *--assets*) meta=1 ;; esac
+[ -n "$meta" ] && [ -n "${FDL_ASSETS:-}" ] && pack+=(--assets "$FDL_ASSETS")
 uvx queria@latest metadata pack "${pack[@]}"
+if [ -n "$meta" ]; then
+    assets=.fdl/pack/assets
+else
+    assets="${FDL_ASSETS:-}"
+fi
 
 author="${FDL_AUTHOR:-$(git config user.name || echo build)}"
 message="${FDL_MESSAGE:-$([ -n "$built" ] && echo "Update the description" || echo build)}"
-uv run fdl commit "$work" -m "$message${trailer:+$'\n\n'$trailer}" --author "$author" --dataset .fdl/pack/dataset.json --assets .fdl/pack/assets
+uv run fdl commit "$work" -m "$message${trailer:+$'\n\n'$trailer}" --author "$author" --dataset .fdl/pack/dataset.json ${assets:+--assets "$assets"}
 uv run fdl push "$work"
 
 # Bring apply into main, or ask people to. main is judged at the version its

@@ -140,7 +140,7 @@ jobs:
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 ```
 
-`contents: write` と `pull-requests: write` は、Queria で変更された説明をこのリポジトリに戻す PR に使います。`scripts/build-fdl.sh` の最後に、main の説明のうち人が変えてこのコードに無いものを `scripts/import_description.py` が見つけ、`queria metadata unpack` が queria.yml・テーブルの Markdown・README.md などに書き（コメントは残す）、ワークフローの次のステップで `scripts/import-pr.sh` が `queria/import-description` ブランチから PR を出します（開いていれば更新、内容が同じなら何もしない）。書き込める GITHUB_TOKEN を持つのはこのステップだけで、checkout は認証情報を残しません。マージすると次のビルドが同じ説明を書くので、main とコードの差が無くなります。権限が無いときや、組織の設定で GitHub Actions に PR の作成を許していないときは、警告を出すだけでビルドは成功のままです。
+`contents: write` と `pull-requests: write` は、Queria で変更された説明をこのリポジトリに戻す PR に使います。`scripts/build-fdl.sh` の最後に、main の説明のうち人が変えてこのコードに無いものを `scripts/import_description.py` が見つけ、`queria metadata unpack` が queria.yml・テーブルの Markdown・README.md などに書き（コメントは残す）、ワークフローの次のステップで `scripts/import-pr.sh` が `queria/import-description` ブランチから PR を出します（開いていれば更新、内容が同じなら何もしない）。書き込める GITHUB_TOKEN を持つのはこのステップだけで、checkout は認証情報を残しません。マージすると次のビルドが同じ説明を書くので、main とコードの差が無くなります。権限が無いときや、組織の設定で GitHub Actions に PR の作成を許していないときは、警告を出すだけでビルドは成功のままです。説明を `_meta` スキーマに持つバージョンはまだ取り込みません（`dataset.json` に説明が無いので、変更が見つからず PR を出しません）。
 
 Queria の照合は、SHA で固定したワークフローもパスが登録と同じなら通す。
 
