@@ -68,6 +68,9 @@ on:
       GBIZINFO_API_TOKEN:
         description: gBizINFO のアクセストークン
         required: false
+      HOUJIN_BANGOU_APP_ID:
+        description: 国税庁 法人番号システム Web-API のアプリケーション ID
+        required: false
 
 jobs:
   sync:
@@ -104,6 +107,7 @@ jobs:
       REINFOLIB_API_KEY: ${{ secrets.REINFOLIB_API_KEY }}
       EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
       GBIZINFO_API_TOKEN: ${{ secrets.GBIZINFO_API_TOKEN }}
+      HOUJIN_BANGOU_APP_ID: ${{ secrets.HOUJIN_BANGOU_APP_ID }}
       SYNC_MODE: ${{ inputs.mode }}
     steps:
       - name: Free disk space
