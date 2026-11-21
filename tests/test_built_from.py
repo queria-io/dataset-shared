@@ -157,11 +157,13 @@ class ChangedSinceTest(unittest.TestCase):
 class DescriptionOnlyTest(unittest.TestCase):
     """Whether to skip, given the paths changed since the commit apply records."""
 
-    def _check(self, changed):
+    WITH_META = {"name": "x", "tables": [{"schema": "_meta", "name": "dataset"}]}
+
+    def _check(self, changed, described=WITH_META):
         head = mock.Mock(message=f"build\n\nBuilt-From: {SHA}")
         with tempfile.TemporaryDirectory() as tmp, \
                 mock.patch("fdl.repo.head", return_value=head), \
-                mock.patch("fdl.diff.described", return_value={"name": "x"}), \
+                mock.patch("fdl.diff.described", return_value=described), \
                 mock.patch.object(built_from, "changed_since", return_value=changed), \
                 mock.patch.object(built_from, "checkout_commit", return_value="f" * 40), \
                 mock.patch.object(built_from, "_jobs", side_effect=lambda sha, path: {"sync": sha == SHA}):
@@ -173,6 +175,9 @@ class DescriptionOnlyTest(unittest.TestCase):
 
     def test_code_changed(self):
         self.assertEqual(self._check(["dataset.yml", "main.py"]), (None, False))
+
+    def test_version_before_meta(self):
+        self.assertEqual(self._check(["dataset.yml"], {"name": "x", "title": "X"}), (None, False))
 
     def test_ci_changed(self):
         self.assertEqual(self._check([".github/dependabot.yml"]), (SHA, True))
