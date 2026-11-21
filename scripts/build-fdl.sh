@@ -154,9 +154,10 @@ export FDL_DATA_PATH
 QUERIA_USER_AGENT="${QUERIA_USER_AGENT:-queria-build/fdl-$(uv run python -c 'import importlib.metadata as m; print(m.version("fdl-cli"))')}"
 export QUERIA_USER_AGENT
 
-# A push to main that changed only the description since apply's last build makes
-# a version of the new description on the data apply holds, without running the
-# dataset's code: the data would come out the same (scripts/built_from.py). Each
+# A push to main that changed only the description and .github/ since apply's last
+# build makes a version of the new description on the data apply holds, without
+# running the dataset's code: the data would come out the same (scripts/built_from.py).
+# With the description unchanged too, fdl commit makes no version. Each
 # version records the commit whose code made its data as a trailer of its message.
 # The check also writes apply's dataset.json, which the SQL and catalogs are taken from.
 built=
@@ -169,7 +170,7 @@ fi
 # 前に手元で回した dbt の manifest を読まないように、ビルドの前に消す
 rm -f target/manifest.json
 if [ -n "$built" ]; then
-    echo "only the description changed since the build from $built: not running the build"
+    echo "only the description or .github/ changed since the build from $built: not running the build"
     trailer="Built-From: $built"
 else
     uv run "$@"

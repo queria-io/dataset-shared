@@ -36,6 +36,16 @@ class DescriptionTest(unittest.TestCase):
             self.assertFalse(built_from.is_description(path), path)
 
 
+class KeepsDataTest(unittest.TestCase):
+    def test_description_and_ci(self):
+        for path in ("README.md", "queria.yml", ".github/workflows/sync.yml", ".github/dependabot.yml"):
+            self.assertTrue(built_from.keeps_data(path), path)
+
+    def test_code_and_shared(self):
+        for path in ("models/a/population.sql", "main.py", "shared", ".dbtignore", "github/x.yml"):
+            self.assertFalse(built_from.keeps_data(path), path)
+
+
 class TrailerTest(unittest.TestCase):
     def test_reads_the_last_trailer(self):
         message = f"build\n\nBuilt-From: {'f' * 40}\nBuilt-From: {SHA}"
@@ -122,6 +132,12 @@ class DescriptionOnlyTest(unittest.TestCase):
 
     def test_code_changed(self):
         self.assertEqual(self._check(["dataset.yml", "main.py"]), (None, False))
+
+    def test_ci_changed(self):
+        self.assertEqual(self._check([".github/workflows/sync.yml"]), (SHA, True))
+
+    def test_shared_moved(self):
+        self.assertEqual(self._check([".github/workflows/sync.yml", "shared"]), (None, False))
 
     def test_nothing_changed_builds(self):
         self.assertEqual(self._check([]), (None, False))

@@ -1,17 +1,19 @@
 """Whether this build may skip running the dataset's code: since the last build, the
-repository changed nothing but the description.
+repository changed nothing but the description and the GitHub Actions settings.
 
 Usage:
   python built_from.py trailer               print the trailer that records this checkout (in GitHub Actions only)
   python built_from.py check <remote> <out>  when only the description changed since apply was last built,
                                             write apply's dataset.json to <out> and print the commit it was built from
+                                            (also when only .github/ changed besides)
 
 Each version the build makes records in its message the commit whose code made its
 data (`Built-From: <sha>`, a trailer as in Git). A version made from the description
 alone keeps the commit of the build before it, so the head of apply always tells
 which code its data came from. When the repository changed only description files
-since that commit, the data would come out the same: the build commits the new
-description on the data it already has.
+and .github/ since that commit, the data would come out the same: the build commits
+the new description on the data it already has (or nothing, when the description is
+the same).
 """
 
 from __future__ import annotations
@@ -33,6 +35,9 @@ DESCRIPTION_FILES = ("queria.yml", "dataset.yml")
 #: Markdown anywhere (the tables' files, README.md, documents) and the older table files.
 DESCRIPTION_PATTERNS = ("*.md", "*.table.yml")
 DESCRIPTION_DIR = "docs/"
+#: The workflows and the other GitHub settings: when and how the build runs, not what
+#: it makes. The shared submodule is outside: its scripts make the data.
+CI_DIR = ".github/"
 
 
 def is_description(path: str) -> bool:
@@ -43,6 +48,11 @@ def is_description(path: str) -> bool:
         or any(fnmatchcase(name, pattern) for pattern in DESCRIPTION_PATTERNS)
         or path.startswith(DESCRIPTION_DIR)
     )
+
+
+def keeps_data(path: str) -> bool:
+    """Whether a change to ``path`` leaves the data as it is: the description or .github/."""
+    return is_description(path) or path.startswith(CI_DIR)
 
 
 def built_from(message: str) -> str | None:
@@ -85,7 +95,7 @@ def changed_since(sha: str) -> list[str] | None:
 
 
 def description_only(store, out: Path) -> str | None:
-    """The commit apply was built from, when the checkout changed only the description since.
+    """The commit apply was built from, when the checkout changed only the description and .github/ since.
 
     Then apply's dataset.json, which the SQL and catalogs are taken from, is written
     to ``out``. A push that changed nothing (an empty commit pushed to build again)
@@ -99,7 +109,7 @@ def description_only(store, out: Path) -> str | None:
     if not sha:
         return None
     changed = changed_since(sha)
-    if not changed or not all(map(is_description, changed)):
+    if not changed or not all(map(keeps_data, changed)):
         return None
     described = diffs.described(store, head)
     if not described:
