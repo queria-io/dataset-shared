@@ -37,13 +37,52 @@ class DescriptionTest(unittest.TestCase):
 
 
 class KeepsDataTest(unittest.TestCase):
-    def test_description_and_ci(self):
-        for path in ("README.md", "queria.yml", ".github/workflows/sync.yml", ".github/dependabot.yml"):
-            self.assertTrue(built_from.keeps_data(path), path)
+    """The workflows at two commits of a real repository."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.cwd = os.getcwd()
+        os.chdir(self.dir.name)
+        for args in (
+            ["init", "-q"],
+            ["config", "user.email", "t@example.org"],
+            ["config", "user.name", "t"],
+            ["config", "commit.gpgsign", "false"],
+        ):
+            subprocess.run(["git", *args], check=True)
+        self.before = self._commit("timeout_minutes: 120\n    secrets:\n      A: x\n")
+
+    def tearDown(self):
+        os.chdir(self.cwd)
+        self.dir.cleanup()
+
+    def _commit(self, tail):
+        Path(".github/workflows").mkdir(parents=True, exist_ok=True)
+        Path(".github/workflows/sync.yml").write_text(
+            "name: Apply\njobs:\n  sync:\n    uses: o/r/.github/workflows/sync.yml@abc\n    with:\n      " + tail
+        )
+        subprocess.run(["git", "add", "-A"], check=True)
+        subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "c"], check=True)
+        return subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+
+    def test_description_and_other_settings(self):
+        for path in ("README.md", "queria.yml", ".github/dependabot.yml"):
+            self.assertTrue(built_from.keeps_data(path, self.before, self.before), path)
 
     def test_code_and_shared(self):
         for path in ("models/a/population.sql", "main.py", "shared", ".dbtignore", "github/x.yml"):
-            self.assertFalse(built_from.keeps_data(path), path)
+            self.assertFalse(built_from.keeps_data(path, self.before, self.before), path)
+
+    def test_time_limit_changed(self):
+        after = self._commit("timeout_minutes: 240\n    secrets:\n      A: x\n")
+        self.assertTrue(built_from.keeps_data(".github/workflows/sync.yml", self.before, after))
+
+    def test_inputs_changed(self):
+        after = self._commit("timeout_minutes: 120\n    secrets:\n      A: x\n      B: y\n")
+        self.assertFalse(built_from.keeps_data(".github/workflows/sync.yml", self.before, after))
+
+    def test_workflow_added(self):
+        self.assertFalse(built_from.keeps_data(".github/workflows/new.yml", self.before, self.before))
 
 
 class TrailerTest(unittest.TestCase):
@@ -123,7 +162,9 @@ class DescriptionOnlyTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, \
                 mock.patch("fdl.repo.head", return_value=head), \
                 mock.patch("fdl.diff.described", return_value={"name": "x"}), \
-                mock.patch.object(built_from, "changed_since", return_value=changed):
+                mock.patch.object(built_from, "changed_since", return_value=changed), \
+                mock.patch.object(built_from, "checkout_commit", return_value="f" * 40), \
+                mock.patch.object(built_from, "_jobs", side_effect=lambda sha, path: {"sync": sha == SHA}):
             out = Path(tmp) / "previous.json"
             return built_from.description_only(object(), out), out.exists()
 
@@ -134,7 +175,10 @@ class DescriptionOnlyTest(unittest.TestCase):
         self.assertEqual(self._check(["dataset.yml", "main.py"]), (None, False))
 
     def test_ci_changed(self):
-        self.assertEqual(self._check([".github/workflows/sync.yml"]), (SHA, True))
+        self.assertEqual(self._check([".github/dependabot.yml"]), (SHA, True))
+
+    def test_workflow_inputs_changed(self):
+        self.assertEqual(self._check([".github/workflows/sync.yml"]), (None, False))
 
     def test_shared_moved(self):
         self.assertEqual(self._check([".github/workflows/sync.yml", "shared"]), (None, False))
