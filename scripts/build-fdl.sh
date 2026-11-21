@@ -10,9 +10,9 @@
 #
 # The build reads and writes the working catalog fdl checks out: FDL_WORKING is
 # its path and FDL_DATA_PATH the folder new data files go to (profiles.yml
-# attaches both). fdl commit freezes it into a version described by the folder
-# queria metadata pack writes from queria.yml and the table Markdown files, and
-# fdl push uploads it to refs/heads/apply.
+# attaches both). queria metadata pack writes the description from queria.yml and
+# the table Markdown files into its _meta schema, fdl commit freezes it into a
+# version, and fdl push uploads it to refs/heads/apply.
 #
 # refs/heads/apply holds only versions built from this code. main is where people
 # change the dataset's descriptions on Queria (its screens, fdl clone and push,
@@ -29,7 +29,7 @@
 #   FDL_REMOTE   the repository (default: https://data.queria.io/datasets/queria/<name>/)
 #   FDL_MESSAGE  the version's message (default: build, or "Update the description" when the build is skipped)
 #   FDL_AUTHOR   who made it (default: git's user.name)
-#   FDL_ASSETS   a folder with the files the asset columns point at (fdl commit --assets)
+#   FDL_ASSETS   a folder with the files the asset columns point at (linked into the folder fdl commit --assets takes)
 #   FDL_UNDESCRIBED  unlisted: tables with no description (no table Markdown file) are not listed on Queria
 #   FDL_DIRECT   1 to write new data files straight to storage when Queria gives a key
 #                to them, instead of keeping them in a local folder until the commit (default: 0)
@@ -183,21 +183,25 @@ else
 fi
 
 # Queria's checks before the version is made (licenses, themes, join keys and each
-# table's primary_key against the data just built), then the folder fdl commit takes:
-# dataset.json, README.md, the tables' guides and the documents. From dbt's
-# target/manifest.json it adds each model's SQL and dependencies, and from
-# profiles.yml the other datasets it attaches (catalogs). When the build was
-# skipped there is no manifest: they come from apply's dataset.json (--base).
+# table's primary_key against the data just built), then the description as the
+# _meta tables of the working catalog, and the folder fdl commit takes:
+# dataset.json (the primary keys and asset columns fdl writes as tags) and
+# assets/ (README.md, the tables' guides and the documents, with the files of
+# FDL_ASSETS linked in). From dbt's target/manifest.json it adds each model's SQL
+# and dependencies, and from profiles.yml the other datasets it attaches
+# (catalogs). When the build was skipped there is no manifest: they come from the
+# _meta apply holds, or from apply's dataset.json for a version before _meta (--base).
 # The dataset's own environment may not hold queria, so it runs as a tool.
 # @latest: uvx otherwise reuses whatever queria it cached first.
 pack=(--quiet --profiles "${DBT_PROFILES_DIR:-.}/profiles.yml" --out .fdl/pack)
 [ -n "$built" ] && pack+=(--base .fdl/previous.json)
 [ "${FDL_UNDESCRIBED:-}" = unlisted ] && pack+=(--unlisted)
+[ -n "${FDL_ASSETS:-}" ] && pack+=(--assets "$FDL_ASSETS")
 uvx queria@latest metadata pack "${pack[@]}"
 
 author="${FDL_AUTHOR:-$(git config user.name || echo build)}"
 message="${FDL_MESSAGE:-$([ -n "$built" ] && echo "Update the description" || echo build)}"
-uv run fdl commit "$work" -m "$message${trailer:+$'\n\n'$trailer}" --author "$author" --dataset .fdl/pack/dataset.json ${FDL_ASSETS:+--assets "$FDL_ASSETS"}
+uv run fdl commit "$work" -m "$message${trailer:+$'\n\n'$trailer}" --author "$author" --dataset .fdl/pack/dataset.json --assets .fdl/pack/assets
 uv run fdl push "$work"
 
 # Bring apply into main, or ask people to. main is judged at the version its
