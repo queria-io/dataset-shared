@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Build a dataset with fdl: clone the apply branch, build on it, push a new
 # version to it, and bring it into main. Called from each dataset's scripts/build.sh.
-# `queria metadata pack` checks the description and writes what fdl commit takes
-# between the build and the commit, so a failed check makes no version.
+# `tabledoc load` checks the description and writes it into the catalog, with what
+# fdl commit takes, between the build and the commit, so a failed check makes no version.
 #
 # Usage:
 #   scripts/build.sh                  # build and publish
@@ -10,9 +10,9 @@
 #
 # The build reads and writes the working catalog fdl checks out: FDL_WORKING is
 # its path and FDL_DATA_PATH the folder new data files go to (profiles.yml
-# attaches both). fdl commit freezes it into a version described by the folder
-# queria metadata pack writes from queria.yml and the table Markdown files, and
-# fdl push uploads it to refs/heads/apply.
+# attaches both). tabledoc load writes the description from queria.yml (or
+# tabledoc.yml) and the table files into its _meta schema, fdl commit freezes it into a
+# version, and fdl push uploads it to refs/heads/apply.
 #
 # refs/heads/apply holds only versions built from this code. main is where people
 # change the dataset's descriptions on Queria (its screens, fdl clone and push,
@@ -29,7 +29,7 @@
 #   FDL_REMOTE   the repository (default: https://data.queria.io/datasets/queria/<name>/)
 #   FDL_MESSAGE  the version's message (default: build, or "Update the description" when the build is skipped)
 #   FDL_AUTHOR   who made it (default: git's user.name)
-#   FDL_ASSETS   a folder with the files the asset columns point at (fdl commit --assets)
+#   FDL_ASSETS   a folder with the files the asset columns point at (linked into the folder fdl commit --assets takes)
 #   FDL_UNDESCRIBED  unlisted: tables with no description (no table Markdown file) are not listed on Queria
 #   FDL_DIRECT   1 to write new data files straight to storage when Queria gives a key
 #                to them, instead of keeping them in a local folder until the commit (default: 0)
@@ -157,10 +157,10 @@ export QUERIA_USER_AGENT
 # A push to main that changed only the description and .github/ (a workflow only in
 # its time limit) since apply's last build makes a version of the new description on
 # the data apply holds, without running the dataset's code: the data would come out the same (scripts/built_from.py).
-# With the description unchanged too, fdl commit makes no version, as long as
-# queria metadata pack writes the same dataset.json as apply's head holds. Each
-# version records the commit whose code made its data as a trailer of its message.
-# The check also writes apply's dataset.json, which the SQL and catalogs are taken from.
+# With the description unchanged too, fdl commit makes no version. Each version
+# records the commit whose code made its data as a trailer of its message. The
+# SQL and dependencies of the models come from the _meta apply holds, so a version
+# from before _meta is built.
 built=
 if [ "${GITHUB_EVENT_NAME:-}" = push ]; then
     built="$(uv run python "$(dirname "$0")/built_from.py" check "$remote" .fdl/previous.json)" || built=
@@ -168,12 +168,9 @@ if [ "${GITHUB_EVENT_NAME:-}" = push ]; then
     [[ "$built" =~ ^[0-9a-f]{40}$ ]] || built=
 fi
 
-# 前に手元で回した dbt の manifest を読まないように、ビルドの前に消す
-rm -f target/manifest.json
-if [ -n "$built" ]; then
-    echo "only the description or .github/ changed since the build from $built: not running the build"
-    trailer="Built-From: $built"
-else
+build() {
+    # 前に手元で回した dbt の manifest を読まないように、ビルドの前に消す
+    rm -f target/manifest.json
     uv run "$@"
     # Each build starts from the last version: drop what no dbt model makes any more
     # (a model removed, renamed or made ephemeral), or it stays in every later version.
@@ -181,24 +178,46 @@ else
         uv run python "$(dirname "$0")/drop_stale.py" target/manifest.json "$name"
     fi
     trailer="$(uv run python "$(dirname "$0")/built_from.py" trailer)"
+}
+
+if [ -n "$built" ]; then
+    echo "only the description or .github/ changed since the build from $built: not running the build"
+    rm -f target/manifest.json
+    trailer="Built-From: $built"
+else
+    build "$@"
 fi
 
-# Queria's checks before the version is made (licenses, themes, join keys and each
-# table's primary_key against the data just built), then the folder fdl commit takes:
-# dataset.json, README.md, the tables' guides and the documents. From dbt's
+# tabledoc checks the description and writes it as the _meta tables of the working
+# catalog, with the folder fdl commit takes: dataset.json (the primary keys and
+# asset columns fdl writes as tags) and assets/ (README.md, the tables' guides and
+# the documents, with the files of FDL_ASSETS linked in). From dbt's
 # target/manifest.json it adds each model's SQL and dependencies, and from
-# profiles.yml the other datasets it attaches (catalogs). When the build was
-# skipped there is no manifest: they come from apply's dataset.json (--base).
-# The dataset's own environment may not hold queria, so it runs as a tool.
-# @latest: uvx otherwise reuses whatever queria it cached first.
-pack=(--quiet --profiles "${DBT_PROFILES_DIR:-.}/profiles.yml" --out .fdl/pack)
-[ -n "$built" ] && pack+=(--base .fdl/previous.json)
-[ "${FDL_UNDESCRIBED:-}" = unlisted ] && pack+=(--unlisted)
-uvx queria@latest metadata pack "${pack[@]}"
+# profiles.yml the other datasets it attaches (catalogs); when the build was
+# skipped, they stay as apply's _meta holds them. The dataset's own environment
+# may not hold tabledoc, so it runs as a tool; @latest: uvx otherwise reuses
+# whatever tabledoc it cached first.
+load=(--quiet --profiles "${DBT_PROFILES_DIR:-.}/profiles.yml" --out .fdl/pack)
+[ "${FDL_UNDESCRIBED:-}" = unlisted ] && load+=(--unlisted)
+[ -n "${FDL_ASSETS:-}" ] && load+=(--assets "$FDL_ASSETS")
+status=0
+uvx tabledoc@latest load "${load[@]}" || status=$?
+# 2: the catalog could not be read or written, such as apply's _meta when its files
+# cannot be read here. Without the build there is nothing else to take the SQL
+# from, so build. 1 is the description's own error, which a build does not fix.
+if [ "$status" = 2 ] && [ -n "$built" ]; then
+    echo "could not keep the SQL from apply's _meta: running the build" >&2
+    built=
+    build "$@"
+    status=0
+    uvx tabledoc@latest load "${load[@]}" || status=$?
+fi
+[ "$status" = 0 ] || exit "$status"
+assets=.fdl/pack/assets
 
 author="${FDL_AUTHOR:-$(git config user.name || echo build)}"
 message="${FDL_MESSAGE:-$([ -n "$built" ] && echo "Update the description" || echo build)}"
-uv run fdl commit "$work" -m "$message${trailer:+$'\n\n'$trailer}" --author "$author" --dataset .fdl/pack/dataset.json ${FDL_ASSETS:+--assets "$FDL_ASSETS"}
+uv run fdl commit "$work" -m "$message${trailer:+$'\n\n'$trailer}" --author "$author" --dataset .fdl/pack/dataset.json ${assets:+--assets "$assets"}
 uv run fdl push "$work"
 
 # Bring apply into main, or ask people to. main is judged at the version its
