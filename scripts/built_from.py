@@ -29,9 +29,9 @@ from pathlib import Path, PurePosixPath
 TRAILER = "Built-From"
 _TRAILER = re.compile(rf"^{TRAILER}: ([0-9a-f]{{40}})$", re.MULTILINE)
 
-#: The files queria metadata pack reads the description from (queria.yml, and the
-#: older dataset.yml). Anything else may change the data.
-DESCRIPTION_FILES = ("queria.yml", "dataset.yml")
+#: The files tabledoc reads the dataset's description from (tabledoc.yml, queria.yml, and
+#: the older dataset.yml). Anything else may change the data.
+DESCRIPTION_FILES = ("tabledoc.yml", "queria.yml", "dataset.yml")
 #: Markdown anywhere (the tables' files, README.md, documents) and the older table files.
 DESCRIPTION_PATTERNS = ("*.md", "*.table.yml")
 DESCRIPTION_DIR = "docs/"
@@ -42,6 +42,8 @@ DESCRIPTION_DIR = "docs/"
 CI_DIR = ".github/"
 WORKFLOWS_DIR = ".github/workflows/"
 TIME_LIMITS = ("timeout_minutes", "timeout-minutes")
+#: The schema that holds the description in each version.
+META = "_meta"
 
 
 def is_description(path: str) -> bool:
@@ -134,8 +136,8 @@ def changed_since(sha: str) -> list[str] | None:
 def description_only(store, out: Path) -> str | None:
     """The commit apply was built from, when the checkout changed only the description and .github/ since.
 
-    Then apply's dataset.json, which the SQL and catalogs are taken from, is written
-    to ``out``. A push that changed nothing (an empty commit pushed to build again)
+    Then apply's dataset.json is written to ``out``. A version from before the
+    description was kept in its _meta tables builds. A push that changed nothing (an empty commit pushed to build again)
     builds as before.
     """
     from fdl import diff as diffs
@@ -151,7 +153,11 @@ def description_only(store, out: Path) -> str | None:
         return None
     described = diffs.described(store, head)
     if not described:
-        print("apply has no dataset.json to take the SQL from: building", file=sys.stderr)
+        print("apply has no dataset.json: building", file=sys.stderr)
+        return None
+    # tabledoc load keeps the SQL and dependencies from the _meta tables apply holds.
+    if not any(t.get("schema") == META for t in described.get("tables") or []):
+        print("apply is from before _meta, so its SQL cannot be kept: building", file=sys.stderr)
         return None
     out.write_text(json.dumps(described, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return sha
