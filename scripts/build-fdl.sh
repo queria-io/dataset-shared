@@ -155,9 +155,8 @@ QUERIA_USER_AGENT="${QUERIA_USER_AGENT:-queria-build/fdl-$(uv run python -c 'imp
 export QUERIA_USER_AGENT
 
 # A push to main that changed only the description and .github/ (a workflow only in
-# its time limit) since apply's last
-# build makes a version of the new description on the data apply holds, without
-# running the dataset's code: the data would come out the same (scripts/built_from.py).
+# its time limit) since apply's last build makes a version of the new description on
+# the data apply holds, without running the dataset's code: the data would come out the same (scripts/built_from.py).
 # With the description unchanged too, fdl commit makes no version, as long as
 # queria metadata pack writes the same dataset.json as apply's head holds. Each
 # version records the commit whose code made its data as a trailer of its message.
