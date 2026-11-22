@@ -157,9 +157,9 @@ class ChangedSinceTest(unittest.TestCase):
 class DescriptionOnlyTest(unittest.TestCase):
     """Whether to skip, given the paths changed since the commit apply records."""
 
-    WITH_FDL = {"tables": {"_fdl.tables": {}, "main.towns": {}}}
+    WITH_DESCRIPTION = {"tables": {"_queria.tables": {}, "main.towns": {}}}
 
-    def _check(self, changed, indexed=WITH_FDL):
+    def _check(self, changed, indexed=WITH_DESCRIPTION):
         head = mock.Mock(message=f"build\n\nBuilt-From: {SHA}")
         with mock.patch("fdl.repo.head", return_value=head), \
                 mock.patch("fdl.diff.indexed", return_value=indexed), \

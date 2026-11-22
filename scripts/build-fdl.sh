@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build a dataset with fdl: clone the apply branch, build on it, push a new
 # version to it, and bring it into main. Called from each dataset's scripts/build.sh.
-# `tabledoc load` checks the description and writes it into the catalog's _fdl schema
+# `tabledoc load` checks the description and writes it into the catalog's _queria schema
 # between the build and the commit, so a failed check makes no version.
 #
 # Usage:
@@ -11,7 +11,7 @@
 # The build reads and writes the working catalog fdl checks out: FDL_WORKING is
 # its path and FDL_DATA_PATH the folder new data files go to (profiles.yml
 # attaches both). tabledoc load writes the description from queria.yml (or
-# tabledoc.yml) and the files beside it into its _fdl schema, fdl commit freezes it into a
+# tabledoc.yml) and the files beside it into its _queria schema, fdl commit freezes it into a
 # version, and fdl push uploads it to refs/heads/apply. Only fdl writes under .fdl/.
 #
 # refs/heads/apply holds only versions built from this code, and this code is where
@@ -154,7 +154,7 @@ export QUERIA_USER_AGENT
 # the data apply holds, without running the dataset's code: the data would come out the same (scripts/built_from.py).
 # With the description unchanged too, fdl commit makes no version. Each version
 # records the commit whose code made its data as a trailer of its message. The
-# SQL and dependencies of the models come from the _fdl schema apply holds (or the
+# SQL and dependencies of the models come from the _queria schema apply holds (or the
 # _meta schema of earlier versions), so a version that holds neither is built.
 built=
 if [ "${GITHUB_EVENT_NAME:-}" = push ]; then
@@ -183,27 +183,27 @@ else
     build "$@"
 fi
 
-# tabledoc checks the description and writes it as the _fdl tables of the working
-# catalog: the dataset, its tables and columns, the primary keys and asset columns
-# fdl reads, and the files (README.md, the tables' guides and the documents). Into
+# tabledoc checks the description and writes it as the _queria tables of the working
+# catalog: the dataset, its tables and columns, and the files (README.md, the
+# tables' guides and the documents). Into
 # a folder outside .fdl/ it puts the files fdl commit --assets uploads: those
 # documents, and the files of FDL_ASSETS linked in. From dbt's
 # target/manifest.json it adds each model's SQL and dependencies, and from
 # profiles.yml the other datasets it attaches (catalogs); when the build was
-# skipped, they stay as apply's _fdl holds them. The dataset's own environment
+# skipped, they stay as apply's _queria holds them. The dataset's own environment
 # may not hold tabledoc, so it runs as a tool; @latest: uvx otherwise reuses
 # whatever tabledoc it cached first.
 assets="$(mktemp -d)"
-load=(--quiet --profiles "${DBT_PROFILES_DIR:-.}/profiles.yml" --out "$assets")
+load=(--quiet --schema _queria --profiles "${DBT_PROFILES_DIR:-.}/profiles.yml" --out "$assets")
 [ "${FDL_UNDESCRIBED:-}" = unlisted ] && load+=(--unlisted)
 [ -n "${FDL_ASSETS:-}" ] && load+=(--assets "$FDL_ASSETS")
 status=0
 uvx tabledoc@latest load "${load[@]}" || status=$?
-# 2: the catalog could not be read or written, such as apply's _fdl when its files
+# 2: the catalog could not be read or written, such as apply's _queria when its files
 # cannot be read here. Without the build there is nothing else to take the SQL
 # from, so build. 1 is the description's own error, which a build does not fix.
 if [ "$status" = 2 ] && [ -n "$built" ]; then
-    echo "could not keep the SQL from apply's _fdl: running the build" >&2
+    echo "could not keep the SQL from apply's _queria: running the build" >&2
     built=
     build "$@"
     status=0
