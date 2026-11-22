@@ -115,7 +115,7 @@ jobs:
         with:
           submodules: true
           # The build runs the dataset's code and the newest queria and fdl-cli:
-          # leave no token in .git/config for them. scripts/import-pr.sh pushes with its own
+          # leave no token in .git/config for them
           persist-credentials: false
 
       - uses: astral-sh/setup-uv@v7
@@ -136,7 +136,7 @@ jobs:
           uv sync
 
       # 取得元の API キーはこの手順にだけ渡す。job の env に置くと、checkout・setup-uv・
-      # 依存のインストール・import-pr の手順からも読める
+      # 依存のインストールの手順からも読める
       - name: Build and push
         env:
           ESTAT_API_KEY: ${{ secrets.ESTAT_API_KEY }}
@@ -146,15 +146,6 @@ jobs:
           HOUJIN_BANGOU_APP_ID: ${{ secrets.HOUJIN_BANGOU_APP_ID }}
           SYNC_MODE: ${{ inputs.mode }}
         run: scripts/build.sh
-
-      # The description changed on Queria, which the build wrote into the checkout,
-      # goes back as a pull request. Only this step holds a token that can push;
-      # without contents and pull-requests: write from the caller it fails alone.
-      - name: Open the pull request for the description changed on Queria
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: shared/scripts/import-pr.sh "$RUNNER_TEMP/queria-import.txt"
 
   notify-failure:
     runs-on: ubuntu-latest

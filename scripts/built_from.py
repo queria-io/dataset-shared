@@ -3,8 +3,8 @@ repository changed nothing but the description and the GitHub Actions settings.
 
 Usage:
   python built_from.py trailer               print the trailer that records this checkout (in GitHub Actions only)
-  python built_from.py check <remote> <out>  when only the description changed since apply was last built,
-                                            write apply's dataset.json to <out> and print the commit it was built from
+  python built_from.py check <remote>        when only the description changed since apply was last built,
+                                            print the commit it was built from
                                             (also when only .github/ changed besides)
 
 Each version the build makes records in its message the commit whose code made its
@@ -18,13 +18,12 @@ the same).
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import subprocess
 import sys
 from fnmatch import fnmatchcase
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 
 TRAILER = "Built-From"
 _TRAILER = re.compile(rf"^{TRAILER}: ([0-9a-f]{{40}})$", re.MULTILINE)
@@ -42,8 +41,10 @@ DESCRIPTION_DIR = "docs/"
 CI_DIR = ".github/"
 WORKFLOWS_DIR = ".github/workflows/"
 TIME_LIMITS = ("timeout_minutes", "timeout-minutes")
-#: The schema that holds the description in each version.
-META = "_meta"
+#: The schema that holds the description and the models' SQL in a version. tabledoc
+#: load --schema _queria keeps the SQL from it alone, so a version that holds only
+#: the earlier _meta schema is built.
+DESCRIBED = "_queria"
 
 
 def is_description(path: str) -> bool:
@@ -133,12 +134,12 @@ def changed_since(sha: str) -> list[str] | None:
     return [path for path in diff.stdout.split("\0") if path]
 
 
-def description_only(store, out: Path) -> str | None:
+def description_only(store) -> str | None:
     """The commit apply was built from, when the checkout changed only the description and .github/ since.
 
-    Then apply's dataset.json is written to ``out``. A version from before the
-    description was kept in its _meta tables builds. A push that changed nothing (an empty commit pushed to build again)
-    builds as before.
+    A version with no _queria schema (one from before it, even with the earlier
+    _meta) builds, as tabledoc load cannot keep its models' SQL. A push
+    that changed nothing (an empty commit pushed to build again) builds as before.
     """
     from fdl import diff as diffs
     from fdl import repo
@@ -151,15 +152,10 @@ def description_only(store, out: Path) -> str | None:
     checkout = checkout_commit()
     if not changed or checkout is None or not all(keeps_data(path, sha, checkout) for path in changed):
         return None
-    described = diffs.described(store, head)
-    if not described:
-        print("apply has no dataset.json: building", file=sys.stderr)
+    tables = (diffs.indexed(store, head) or {}).get("tables") or {}
+    if not any(name.split(".", 1)[0] == DESCRIBED for name in tables):
+        print("apply holds no _queria schema, so its SQL cannot be kept: building", file=sys.stderr)
         return None
-    # tabledoc load keeps the SQL and dependencies from the _meta tables apply holds.
-    if not any(t.get("schema") == META for t in described.get("tables") or []):
-        print("apply is from before _meta, so its SQL cannot be kept: building", file=sys.stderr)
-        return None
-    out.write_text(json.dumps(described, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return sha
 
 
@@ -169,10 +165,10 @@ def main(argv: list[str]) -> int:
         if sha:
             print(f"{TRAILER}: {sha}")
         return 0
-    if argv[:1] == ["check"] and len(argv) == 3:
+    if argv[:1] == ["check"] and len(argv) == 2:
         from fdl.stores import open_store
 
-        sha = description_only(open_store(argv[1]), Path(argv[2]))
+        sha = description_only(open_store(argv[1]))
         if sha:
             print(sha)
         return 0
