@@ -255,6 +255,7 @@ Gold にあたる層をデータセット側に持つと、用途の数だけテ
 - `raw`・`stg`・`mart` のどのディレクトリにも無い
 - `raw` 以外でファイルを読む（`read_parquet`・`read_csv`・`st_read` など）。`reference/` の下のファイルは除く
 - `stg` が `raw` 以外を、`mart` が `stg`・`mart` 以外を、`raw` が `stg`・`mart` を `ref` で読む
+- dbt の yml（`models:`・`sources:` などを持つ yml）に `description` か `meta` がある
 
 ### モデルを消したとき
 
@@ -359,7 +360,9 @@ Excel・CSV・PDF・ZIP など、配布元がファイルで配るデータは�
 docs.queria.io のクックブックに取り込まれる。取り込みはカタログに登録済みの
 リポジトリからしか行われないので、これは first-party 固有の話になる。
 
-メタデータは `queria.yml` とテーブルの Markdown にだけ書く。dbt の `meta:` には書かない。
+メタデータは `tabledoc.yml` と、テーブルごとの `<model>.tabledoc.yml`（モデルの `.sql` の隣、ガイドは同じ隣の `<model>.md`）にだけ書く。
+1 つのテーブルの説明を 1 つのファイルにして、どのテーブルの説明かをファイル名で分かるようにするため。
+dbt の yml にはテストなどビルドに要るものだけを書き、`description` と `meta` は書かない（`scripts/check_models.py` が止める）。
 配布されるのは `tabledoc load` がカタログの `_queria` スキーマに書くテーブルで、その入力はこれらのファイルだけ。
 ビルドと保守の手順は README.md ではなく CONTRIBUTING.md に書く（README.md はデータセットの概要として Queria に表示される）。
 

@@ -89,6 +89,18 @@ class CheckModelsTest(unittest.TestCase):
             ["dbt_project.yml: incremental set outside the model; set it in the model's config()"],
         )
 
+    def test_no_description_in_dbt_yml(self):
+        root = models({
+            **GOOD,
+            "a/mart/_models.yml": "models:\n  - name: x\n    description: X\n    config:\n      meta:\n        title: X\n",
+            "a/mart/_tests.yml": "models:\n  - name: y\n    columns:\n      - name: id\n        data_tests: [unique]\n",
+            "a/mart/x.table.yml": "$schema: https://queria.io/schemas/table/v1.json\ndescription: X\n",
+        })
+        self.assertEqual(
+            check_models.problems(root),
+            ["a/mart/_models.yml: description and meta in dbt's yml; write the description in the table's own tabledoc file"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
