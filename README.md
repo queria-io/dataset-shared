@@ -51,7 +51,7 @@ sed 's/DATASET_NAME/<name>/g' shared/templates/profiles.yml > profiles.yml
 
 ## 提供スクリプト
 
-- `scripts/build-fdl.sh`: `refs/heads/apply` ブランチで `fdl clone` → ビルド → `fdl commit` → `fdl push` を回し、apply を main に取り込む。apply ブランチにはこのコードから作ったバージョンだけが積まれる。main に前回のビルドより後の人の変更（Queria の画面、`fdl clone` と `fdl push`、変更リクエストのマージ）が無ければ `fdl merge` して main を進め、あれば apply からの変更リクエストを作って人が確認するまで main を変えない（`scripts/sync_branch.py`）。merge が衝突したときや main に push できないとき（承認必須のデータセット）も変更リクエストにする。Queria は apply ブランチのあるデータセットで、人がテーブルの行や列を変更したバージョンを main に入れない（apply は main を取り込まないので、main で変えた行は以後のビルドと毎回競合する）。人が main で変更できるのは説明だけで、データの誤りは元データの公開元に報告する。main で変えた説明はビルドの後にコードへ取り込むプルリクエストになり（`scripts/import-pr.sh`）、説明が競合して apply からの変更リクエストをマージできないときは、そのプルリクエストをマージしてからもう一度 Apply を実行する。commit の前に `tabledoc load`（[tabledoc](https://github.com/queria-io/tabledoc)）が説明を検査し、作業カタログの `_meta` スキーマのテーブルに書き直す。説明はデータと同じバージョンに入る。あわせて `fdl commit` に渡すもの（主キーと asset 列だけの `dataset.json` と、README.md・テーブルのガイド・ドキュメントを入れた `assets/`）を `.fdl/pack/` に書き出す。ビルドが dbt の `target/manifest.json` を書いたときは、モデルの SQL（`sql`）と依存先（`depends_on`）、profiles.yml が読むだけで ATTACH する公開データセットのエイリアス（`catalogs`）も tabledoc が入れる。記述に書いた値が優先される。main への push で、前回のビルドから説明のファイル（queria.yml・Markdown・docs/、まだ移していないリポジトリでは dataset.yml・*.table.yml）と `.github/`（ワークフローは打ち切り時間の変更だけ）しか変わっていないときは、ビルドを実行せず、apply のデータのまま新しい説明でバージョンを作る（SQL と依存先は apply の先頭の `_meta` から引き継ぐ。apply の先頭が `_meta` の無いバージョンのときと、`_meta` のファイルを読めないときはビルドする）。説明も変わっていなければバージョンを作らない。`shared` の submodule を上げたときはビルドする。どのコミットのコードでデータを作ったかは、各バージョンのメッセージの `Built-From: <SHA>` に記録する（`scripts/built_from.py`）。スケジュールと手動の実行は常にビルドする
+- `scripts/build-fdl.sh`: `refs/heads/apply` ブランチで `fdl clone` → ビルド → `fdl commit` → `fdl push` を回し、apply を main に取り込む。apply ブランチにはこのコードから作ったバージョンだけが積まれる。main に前回のビルドより後の人の変更（`fdl clone` と `fdl push`、apply 以外からの変更リクエストのマージ）が無ければ `fdl merge` して main を進め、あれば apply からの変更リクエストを作って人が確認するまで main を変えない（`scripts/sync_branch.py`）。merge が衝突したときや main に push できないとき（承認必須のデータセット）も変更リクエストにする。Queria は apply ブランチのあるデータセットで、人がテーブルの行や列を変更したバージョンを main に入れない（apply は main を取り込まないので、main で変えた行は以後のビルドと毎回競合する）。説明もこのリポジトリのファイルで変更し、データの誤りは元データの公開元に報告する。commit の前に `tabledoc load`（[tabledoc](https://github.com/queria-io/tabledoc)）が説明を検査し、作業カタログの `_fdl` スキーマ（[FDL の仕様](https://fdl.queria.io/spec/fdl-schema)）のテーブルに書き直す。説明・主キー・asset 列・README.md やテーブルのガイドなどのファイルは、データと同じバージョンに入る。あわせて `fdl commit --assets` に渡すファイル（README.md・テーブルのガイド・ドキュメントと、`FDL_ASSETS` のファイルへのリンク）を `.fdl/` の外の一時フォルダに書き出す。`.fdl/` の下には fdl だけが書く。ビルドが dbt の `target/manifest.json` を書いたときは、モデルの SQL（`sql`）と依存先（`depends_on`）、profiles.yml が読むだけで ATTACH する公開データセットのエイリアス（`catalogs`）も tabledoc が入れる。記述に書いた値が優先される。main への push で、前回のビルドから説明のファイル（queria.yml・Markdown・docs/、まだ移していないリポジトリでは dataset.yml・*.table.yml）と `.github/`（ワークフローは打ち切り時間の変更だけ）しか変わっていないときは、ビルドを実行せず、apply のデータのまま新しい説明でバージョンを作る（SQL と依存先は apply の先頭の `_fdl`（それより前のバージョンでは `_meta`）から引き継ぐ。apply の先頭がどちらも持たないバージョンのときと、そのファイルを読めないときはビルドする）。説明も変わっていなければバージョンを作らない。`shared` の submodule を上げたときはビルドする。どのコミットのコードでデータを作ったかは、各バージョンのメッセージの `Built-From: <SHA>` に記録する（`scripts/built_from.py`）。スケジュールと手動の実行は常にビルドする
 
 ## 取得の共通部品
 
@@ -132,15 +132,11 @@ name: Apply
 jobs:
   sync:
     permissions:
-      contents: write
-      pull-requests: write
       id-token: write
     uses: queria-io/dataset-shared/.github/workflows/sync.yml@<shared の SHA>
     secrets:
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 ```
-
-`contents: write` と `pull-requests: write` は、Queria で変更された説明をこのリポジトリに戻す PR に使います。`scripts/build-fdl.sh` の最後に、main の説明のうち人が変えてこのコードに無いものを `scripts/import_description.py` が見つけ、`queria metadata unpack` が queria.yml・テーブルの Markdown・README.md などに書き（コメントは残す）、ワークフローの次のステップで `scripts/import-pr.sh` が `queria/import-description` ブランチから PR を出します（開いていれば更新、内容が同じなら何もしない）。書き込める GITHUB_TOKEN を持つのはこのステップだけで、checkout は認証情報を残しません。マージすると次のビルドが同じ説明を書くので、main とコードの差が無くなります。権限が無いときや、組織の設定で GitHub Actions に PR の作成を許していないときは、警告を出すだけでビルドは成功のままです。説明を `_meta` スキーマに持つバージョンはまだ取り込みません（`dataset.json` に説明が無いので、変更が見つからず PR を出しません）。
 
 Queria の照合は、SHA で固定したワークフローもパスが登録と同じなら通す。
 
@@ -363,7 +359,7 @@ docs.queria.io のクックブックに取り込まれる。取り込みはカ�
 リポジトリからしか行われないので、これは first-party 固有の話になる。
 
 メタデータは `queria.yml` とテーブルの Markdown にだけ書く。dbt の `meta:` には書かない。
-配布されるのは `tabledoc load` がカタログの `_meta` スキーマに書くテーブルで、その入力はこれらのファイルだけ。
+配布されるのは `tabledoc load` がカタログの `_fdl` スキーマに書くテーブルで、その入力はこれらのファイルだけ。
 ビルドと保守の手順は README.md ではなく CONTRIBUTING.md に書く（README.md はデータセットの概要として Queria に表示される）。
 
 **`ai_context` は廃止する。** 書いても読む先が無いので埋める必要はない。既に書いてある

@@ -157,39 +157,40 @@ class ChangedSinceTest(unittest.TestCase):
 class DescriptionOnlyTest(unittest.TestCase):
     """Whether to skip, given the paths changed since the commit apply records."""
 
-    WITH_META = {"name": "x", "tables": [{"schema": "_meta", "name": "dataset"}]}
+    WITH_FDL = {"tables": {"_fdl.tables": {}, "main.towns": {}}}
 
-    def _check(self, changed, described=WITH_META):
+    def _check(self, changed, indexed=WITH_FDL):
         head = mock.Mock(message=f"build\n\nBuilt-From: {SHA}")
-        with tempfile.TemporaryDirectory() as tmp, \
-                mock.patch("fdl.repo.head", return_value=head), \
-                mock.patch("fdl.diff.described", return_value=described), \
+        with mock.patch("fdl.repo.head", return_value=head), \
+                mock.patch("fdl.diff.indexed", return_value=indexed), \
                 mock.patch.object(built_from, "changed_since", return_value=changed), \
                 mock.patch.object(built_from, "checkout_commit", return_value="f" * 40), \
                 mock.patch.object(built_from, "_jobs", side_effect=lambda sha, path: {"sync": sha == SHA}):
-            out = Path(tmp) / "previous.json"
-            return built_from.description_only(object(), out), out.exists()
+            return built_from.description_only(object())
 
     def test_description_changed(self):
-        self.assertEqual(self._check(["dataset.yml"]), (SHA, True))
+        self.assertEqual(self._check(["dataset.yml"]), SHA)
 
     def test_code_changed(self):
-        self.assertEqual(self._check(["dataset.yml", "main.py"]), (None, False))
+        self.assertIsNone(self._check(["dataset.yml", "main.py"]))
+
+    def test_version_with_meta(self):
+        self.assertEqual(self._check(["dataset.yml"], {"tables": {"_meta.tables": {}}}), SHA)
 
     def test_version_before_meta(self):
-        self.assertEqual(self._check(["dataset.yml"], {"name": "x", "title": "X"}), (None, False))
+        self.assertIsNone(self._check(["dataset.yml"], {"tables": {"main.towns": {}}}))
 
     def test_ci_changed(self):
-        self.assertEqual(self._check([".github/dependabot.yml"]), (SHA, True))
+        self.assertEqual(self._check([".github/dependabot.yml"]), SHA)
 
     def test_workflow_inputs_changed(self):
-        self.assertEqual(self._check([".github/workflows/sync.yml"]), (None, False))
+        self.assertIsNone(self._check([".github/workflows/sync.yml"]))
 
     def test_shared_moved(self):
-        self.assertEqual(self._check([".github/workflows/sync.yml", "shared"]), (None, False))
+        self.assertIsNone(self._check([".github/workflows/sync.yml", "shared"]))
 
     def test_nothing_changed_builds(self):
-        self.assertEqual(self._check([]), (None, False))
+        self.assertIsNone(self._check([]))
 
 
 if __name__ == "__main__":

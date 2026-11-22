@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import sync_branch  # noqa: E402
 
 
-def decide(versions: dict, refs: dict, main_id: str | None = None, settled: bool = False) -> str:
+def decide(versions: dict, refs: dict, main_id: str | None = None) -> str:
     """refs は ref 名からバージョン ID、versions は ID から parents"""
 
     def head(_store, name):
@@ -35,9 +35,7 @@ def decide(versions: dict, refs: dict, main_id: str | None = None, settled: bool
 
     with mock.patch.object(sync_branch.repo, "head", head), mock.patch.object(
         sync_branch.repo, "in_history", in_history
-    ), mock.patch.object(sync_branch.repo, "read_version", read_version), mock.patch.object(
-        sync_branch, "settled", lambda *_: settled
-    ):
+    ), mock.patch.object(sync_branch.repo, "read_version", read_version):
         return sync_branch.decide(None, main_id)
 
 
@@ -80,12 +78,6 @@ class CurrentTest(unittest.TestCase):
     def test_a_change_on_main_with_no_new_build_needs_nothing(self):
         versions = {"a": (), "h": ("a",)}
         self.assertEqual(decide(versions, {MAIN: "h", SYNC: "a"}), "current")
-
-
-class SettledTest(unittest.TestCase):
-    def test_a_change_the_code_took_too_is_merged(self):
-        versions = {"a": (), "h": ("a",), "b": ("a",)}
-        self.assertEqual(decide(versions, {MAIN: "h", SYNC: "b"}, settled=True), "auto")
 
 
 class JudgedVersionTest(unittest.TestCase):

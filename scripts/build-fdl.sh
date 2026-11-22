@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Build a dataset with fdl: clone the apply branch, build on it, push a new
 # version to it, and bring it into main. Called from each dataset's scripts/build.sh.
-# `tabledoc load` checks the description and writes it into the catalog, with what
-# fdl commit takes, between the build and the commit, so a failed check makes no version.
+# `tabledoc load` checks the description and writes it into the catalog's _fdl schema
+# between the build and the commit, so a failed check makes no version.
 #
 # Usage:
 #   scripts/build.sh                  # build and publish
@@ -11,16 +11,14 @@
 # The build reads and writes the working catalog fdl checks out: FDL_WORKING is
 # its path and FDL_DATA_PATH the folder new data files go to (profiles.yml
 # attaches both). tabledoc load writes the description from queria.yml (or
-# tabledoc.yml) and the table files into its _meta schema, fdl commit freezes it into a
-# version, and fdl push uploads it to refs/heads/apply.
+# tabledoc.yml) and the files beside it into its _fdl schema, fdl commit freezes it into a
+# version, and fdl push uploads it to refs/heads/apply. Only fdl writes under .fdl/.
 #
-# refs/heads/apply holds only versions built from this code. main is where people
-# change the dataset's descriptions on Queria (its screens, fdl clone and push,
-# change requests). Queria keeps people from changing rows in a dataset that has
-# an apply branch: apply never takes main in, so a row changed on main would
-# conflict with every later build. Errors in the data go to the publisher of the
-# source data. When main holds nothing but what earlier builds brought, apply is
-# merged into main here (scripts/sync_branch.py). When people changed main since,
+# refs/heads/apply holds only versions built from this code, and this code is where
+# the description is changed. apply never takes main in, so a change made on main
+# would conflict with every later build; errors in the data go to the publisher of
+# the source data. When main holds nothing but what earlier builds brought, apply is
+# merged into main here (scripts/sync_branch.py). When someone changed main since,
 # a change request from apply is opened instead, so nobody's change is merged unseen.
 #
 # Environment:
@@ -53,19 +51,6 @@ work=".fdl/work.sqlite"
 
 # The models follow the layers and the idempotency rules (README.md), or nothing is built.
 python3 "$(dirname "$0")/check_models.py" models
-
-# fdl clone writes the version's description (dataset.json and its files, such as
-# README.md) into the folder it runs in, unless dataset.json or dataset.yml is
-# there, and refuses when one of those files already is. The description here is
-# queria.yml and the files beside it, so clone from an empty folder: only the
-# working metadata is kept.
-clone() {
-    local here="$PWD" empty status=0
-    empty="$(mktemp -d)"
-    (cd "$empty" && uv run --project "$here" fdl clone "$1" "$here/$2" "${@:3}") || status=$?
-    rm -rf "$empty"
-    return "$status"
-}
 
 # fdl is in beta: build with the latest, as the Apply workflow does, so that a build on this
 # machine makes and profiles the version like the Apply workflow even when uv.lock is old.
@@ -133,7 +118,7 @@ decision="$(uv run python "$(dirname "$0")/sync_branch.py" "$remote")"
 if [ "$decision" = start ]; then
     uv run fdl branch "$remote" apply refs/heads/main >/dev/null
 fi
-clone "$remote" "$work" --branch apply ${storage[@]+"${storage[@]}"}
+uv run fdl clone "$remote" "$work" --branch apply ${storage[@]+"${storage[@]}"}
 FDL_DATA_PATH="$(data_path)"
 # Queria's key reaches the data files alone (FDL_STORAGE_DATA). If they are
 # somewhere else, the key cannot write them: build through a local folder.
@@ -144,7 +129,7 @@ if [ -n "${storage[*]+x}" ] && [ "$FDL_DATA_PATH" != "${FDL_STORAGE_DATA:-}" ]; 
     unset FDL_STORAGE FDL_STORAGE_DATA FDL_STORAGE_SECRET AWS_CONFIG_FILE
     storage=()
     rm -rf .fdl
-    clone "$remote" "$work" --branch apply
+    uv run fdl clone "$remote" "$work" --branch apply
     FDL_DATA_PATH="$(data_path)"
 fi
 export FDL_WORKING="$PWD/$work"
@@ -159,11 +144,11 @@ export QUERIA_USER_AGENT
 # the data apply holds, without running the dataset's code: the data would come out the same (scripts/built_from.py).
 # With the description unchanged too, fdl commit makes no version. Each version
 # records the commit whose code made its data as a trailer of its message. The
-# SQL and dependencies of the models come from the _meta apply holds, so a version
-# from before _meta is built.
+# SQL and dependencies of the models come from the _fdl schema apply holds (or the
+# _meta schema of earlier versions), so a version that holds neither is built.
 built=
 if [ "${GITHUB_EVENT_NAME:-}" = push ]; then
-    built="$(uv run python "$(dirname "$0")/built_from.py" check "$remote" .fdl/previous.json)" || built=
+    built="$(uv run python "$(dirname "$0")/built_from.py" check "$remote")" || built=
     # Anything but a commit (a stray line on stdout) builds.
     [[ "$built" =~ ^[0-9a-f]{40}$ ]] || built=
 fi
@@ -188,37 +173,39 @@ else
     build "$@"
 fi
 
-# tabledoc checks the description and writes it as the _meta tables of the working
-# catalog, with the folder fdl commit takes: dataset.json (the primary keys and
-# asset columns fdl writes as tags) and assets/ (README.md, the tables' guides and
-# the documents, with the files of FDL_ASSETS linked in). From dbt's
+# tabledoc checks the description and writes it as the _fdl tables of the working
+# catalog: the dataset, its tables and columns, the primary keys and asset columns
+# fdl reads, and the files (README.md, the tables' guides and the documents). Into
+# a folder outside .fdl/ it puts the files fdl commit --assets uploads: those
+# documents, and the files of FDL_ASSETS linked in. From dbt's
 # target/manifest.json it adds each model's SQL and dependencies, and from
 # profiles.yml the other datasets it attaches (catalogs); when the build was
-# skipped, they stay as apply's _meta holds them. The dataset's own environment
+# skipped, they stay as apply's _fdl holds them. The dataset's own environment
 # may not hold tabledoc, so it runs as a tool; @latest: uvx otherwise reuses
 # whatever tabledoc it cached first.
-load=(--quiet --profiles "${DBT_PROFILES_DIR:-.}/profiles.yml" --out .fdl/pack)
+assets="$(mktemp -d)"
+load=(--quiet --profiles "${DBT_PROFILES_DIR:-.}/profiles.yml" --out "$assets")
 [ "${FDL_UNDESCRIBED:-}" = unlisted ] && load+=(--unlisted)
 [ -n "${FDL_ASSETS:-}" ] && load+=(--assets "$FDL_ASSETS")
 status=0
 uvx tabledoc@latest load "${load[@]}" || status=$?
-# 2: the catalog could not be read or written, such as apply's _meta when its files
+# 2: the catalog could not be read or written, such as apply's _fdl when its files
 # cannot be read here. Without the build there is nothing else to take the SQL
 # from, so build. 1 is the description's own error, which a build does not fix.
 if [ "$status" = 2 ] && [ -n "$built" ]; then
-    echo "could not keep the SQL from apply's _meta: running the build" >&2
+    echo "could not keep the SQL from apply's _fdl: running the build" >&2
     built=
     build "$@"
     status=0
     uvx tabledoc@latest load "${load[@]}" || status=$?
 fi
 [ "$status" = 0 ] || exit "$status"
-assets=.fdl/pack/assets
 
 author="${FDL_AUTHOR:-$(git config user.name || echo build)}"
 message="${FDL_MESSAGE:-$([ -n "$built" ] && echo "Update the description" || echo build)}"
-uv run fdl commit "$work" -m "$message${trailer:+$'\n\n'$trailer}" --author "$author" --dataset .fdl/pack/dataset.json ${assets:+--assets "$assets"}
+uv run fdl commit "$work" -m "$message${trailer:+$'\n\n'$trailer}" --author "$author" --assets "$assets"
 uv run fdl push "$work"
+rm -rf "$assets"
 
 # Bring apply into main, or ask people to. main is judged at the version its
 # clone got, so a push to main in between is not merged unseen; a push after the
@@ -226,7 +213,7 @@ uv run fdl push "$work"
 main=".fdl/main.sqlite"
 decision="$(uv run python "$(dirname "$0")/sync_branch.py" "$remote")"
 if [ "$decision" != new ]; then
-    clone "$remote" "$main" >/dev/null
+    uv run fdl clone "$remote" "$main" >/dev/null
     base="$(uv run python -c 'import json, sys; print(json.load(open(sys.argv[1]))["base"])' "$main.fdl.json")"
     decision="$(uv run python "$(dirname "$0")/sync_branch.py" "$remote" "$base")"
 fi
@@ -266,21 +253,4 @@ if [ -n "$request" ]; then
         --title "$message" --body "Built from ${GITHUB_REPOSITORY:-this repository}${GITHUB_SHA:+ at $GITHUB_SHA}" 2>&1)" \
         || case "$out" in *request_exists* | *"already has open request"*) echo "the open change request from apply now shows this build" >&2 ;; *) echo "$out" >&2; exit 1 ;; esac
     echo "$out"
-fi
-
-# The description people changed on Queria is written into this checkout, so
-# that the workflow's next step can bring it back as a pull request and the code
-# follows main (scripts/import_description.py, queria metadata unpack,
-# scripts/import-pr.sh). Only in GitHub Actions; the version is already published,
-# so a failure here only warns.
-if [ -n "${GITHUB_ACTIONS:-}" ]; then
-    versions="${RUNNER_TEMP:?}/queria-versions"
-    if found="$(uv run python "$(dirname "$0")/import_description.py" "$remote" "$versions")"; then
-        if [ -n "$found" ]; then
-            uvx queria@latest metadata unpack "$versions/main" --base "$versions/base" >"$RUNNER_TEMP/queria-import.txt" \
-                || echo "warning: could not write the description changed on Queria" >&2
-        fi
-    else
-        echo "warning: could not read the description changed on Queria" >&2
-    fi
 fi

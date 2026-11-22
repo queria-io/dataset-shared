@@ -5,9 +5,9 @@ Usage:
   python sync_branch.py --target <remote>     print the Queria API and <handle>/<name>
 
 The build runs on refs/heads/apply, which only ever holds versions built from
-this repository's code. main is where people change the dataset's descriptions
-(on Queria's screens, or with fdl clone, push and change requests); Queria does
-not let people change its rows. Prints one of:
+this repository's code. The code is where the description is changed, so main
+holds nothing apply lacks unless someone pushed to it directly or merged a
+change request of their own. Prints one of:
 
   new      main does not exist yet
   start    main exists and the apply branch does not: start it at main
@@ -22,29 +22,28 @@ import os
 import re
 import sys
 
-from fdl import diff as diffs
 from fdl import repo
 from fdl.stores import open_store
 
-from import_description import drift, is_empty, merge_base
 from storage_key import API
 
 
-def settled(store, main, apply) -> bool:
-    """Whether main changed nothing since its merge base with apply that apply lacks.
+def merge_base(store, main, apply):
+    """The latest apply version main holds: main itself, or one a merge in its history took.
 
-    So it is when people changed only the description, and the code took the
-    same change (an import pull request merged): no data, and no words apply
-    does not hold.
+    apply only grows by first parent, and main reaches it through its own
+    first parents and the merges that took apply in, so this walks main back
+    only past the changes made since, not the whole history.
     """
-    base = merge_base(store, main, apply)
-    if base is None:
-        return False
-    data = diffs.versions(store, base, main)
-    if any(data["tables"].values()) or data["rows"] or data["columns"] or data["data"]:
-        return False
-    found = drift(store, base, main, apply)
-    return found is not None and is_empty(found)
+    version = main
+    while version is not None:
+        if repo.in_history(store, version.id, apply):
+            return version
+        for merged in version.parents[1:]:
+            if repo.in_history(store, merged, apply):
+                return repo.read_version(store, merged)
+        version = repo.read_version(store, version.parents[0]) if version.parents else None
+    return None
 
 
 def decide(store, main_id: str | None = None) -> str:
@@ -73,8 +72,6 @@ def decide(store, main_id: str | None = None) -> str:
     if any(repo.in_history(store, merged, apply) for merged in main.parents[1:]):
         return "auto"
     if repo.in_history(store, main.id, apply):
-        return "auto"
-    if settled(store, main, apply):
         return "auto"
     return "request"
 
