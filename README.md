@@ -363,6 +363,7 @@ docs.queria.io のクックブックに取り込まれる。取り込みはカ�
 メタデータは `tabledoc.yml` と、テーブルごとの `<model>.tabledoc.yml`（モデルの `.sql` の隣、ガイドは同じ隣の `<model>.md`）にだけ書く。
 1 つのテーブルの説明を 1 つのファイルにして、どのテーブルの説明かをファイル名で分かるようにするため。
 dbt の yml にはテストなどビルドに要るものだけを書き、`description` と `meta` は書かない（`scripts/check_models.py` が止める）。
+dbt はモデルのフォルダの yml をすべて構文解析するので、`.dbtignore` に `*.tabledoc.yml` を書く（無いと `tabledoc load` が止める）。
 配布されるのは `tabledoc load` がカタログの `_queria` スキーマに書くテーブルで、その入力はこれらのファイルだけ。
 ビルドと保守の手順は README.md ではなく CONTRIBUTING.md に書く（README.md はデータセットの概要として Queria に表示される）。
 
