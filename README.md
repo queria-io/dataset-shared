@@ -359,7 +359,7 @@ Excel・CSV・PDF・ZIP など、配布元がファイルで配るデータは�
 docs.queria.io のクックブックに取り込まれる。取り込みはカタログに登録済みの
 リポジトリからしか行われないので、これは first-party 固有の話になる。
 
-メタデータは `tabledoc.yml` とテーブルの Markdown にだけ書く。dbt の `meta:` には書かない。
+メタデータは `queria.yml` とテーブルの Markdown にだけ書く。dbt の `meta:` には書かない。
 配布されるのは `tabledoc load` がカタログの `_queria` スキーマに書くテーブルで、その入力はこれらのファイルだけ。
 ビルドと保守の手順は README.md ではなく CONTRIBUTING.md に書く（README.md はデータセットの概要として Queria に表示される）。
 
