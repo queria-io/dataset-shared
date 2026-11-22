@@ -38,14 +38,20 @@ if [ "$#" -eq 0 ]; then
     set -- python main.py
 fi
 
-# tabledoc.yml or queria.yml, or dataset.yml in a repository that still keeps the older files.
-described_by=dataset.yml
+# tabledoc.yml, or queria.yml in a repository that still keeps the older file: the
+# files tabledoc load reads. It does not read dataset.yml, so a repository with only
+# that stops here instead of after the build.
+described_by=
 for file in tabledoc.yml queria.yml; do
     if [ -f "$file" ]; then
         described_by="$file"
         break
     fi
 done
+if [ -z "$described_by" ]; then
+    echo "no tabledoc.yml or queria.yml: tabledoc load reads the description from one of them (move dataset.yml to queria.yml)" >&2
+    exit 2
+fi
 name="$(sed -n 's/^name: *//p' "$described_by" 2>/dev/null | head -n 1 || true)"
 if [ -z "$name" ]; then
     echo "$described_by has no name" >&2
@@ -195,16 +201,18 @@ fi
 # (catalogs in profiles.yml), and no profile for its own tables and the tables
 # Queria does not list, so it runs where this project's fdl is on PATH (uv run).
 # It reads the rows it keeps from apply's files with FDL_TOKEN, which in GitHub
-# Actions is the exchanged token (scripts/queria_token.py) and elsewhere the token
-# fdl reads the remote with (FDL_TOKEN, or its helper after `queria login`).
+# Actions is the exchanged token (scripts/queria_token.py) and elsewhere FDL_TOKEN
+# or QUERIA_TOKEN, else the token fdl reads the remote with (its helper after `queria login`).
 # Into a folder outside .fdl/ it puts the files fdl commit --assets uploads:
 # those documents, and the files of FDL_ASSETS linked in. From dbt's
 # target/manifest.json it adds each model's SQL and dependencies; when the build
 # was skipped, they stay as apply's _queria holds them. The dataset's own
 # environment may not hold tabledoc, so it runs as a tool: the newest, and at
 # least the first that writes _queria (--schema) and runs fdl declare.
-# --upgrade-package: uvx otherwise reuses whatever tabledoc it cached first.
-tabledoc=(uvx --upgrade-package tabledoc --from "tabledoc>=0.3.1" tabledoc)
+# --isolated: uvx otherwise runs a tabledoc installed with `uv tool install` whenever
+# it meets the bound, however old (uvx ignores --upgrade-package for it).
+# --refresh-package: uvx otherwise resolves against the index it cached.
+tabledoc=(uvx --isolated --refresh-package tabledoc --from "tabledoc>=0.3.1" tabledoc)
 assets="$(mktemp -d)"
 load=(--quiet --schema _queria --profiles "${DBT_PROFILES_DIR:-.}/profiles.yml" --out "$assets")
 [ "${FDL_UNDESCRIBED:-}" = unlisted ] && load+=(--unlisted)
