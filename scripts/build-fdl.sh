@@ -77,10 +77,21 @@ fi
 # there and the build goes through a local folder. By default clone keeps new files
 # in a local folder that the commit uploads.
 storage=()
+# The folder of the files fdl commit --assets uploads, made below.
+assets=
+# However the build ends: give the storage key back, and remove the folder of assets.
+cleanup() {
+    if [ -n "${storage[*]+x}" ]; then
+        uv run python "$(dirname "$0")/storage_key.py" drop || true
+    fi
+    if [ -n "$assets" ]; then
+        rm -rf "$assets"
+    fi
+}
+trap cleanup EXIT
 if [ "${FDL_DIRECT:-0}" = 1 ] \
     && keys="$(uv run python "$(dirname "$0")/storage_key.py" issue "$remote")"; then
     eval "$keys"
-    trap 'uv run python "$(dirname "$0")/storage_key.py" drop || true' EXIT
     storage=(--storage "$FDL_STORAGE")
 fi
 
@@ -125,7 +136,6 @@ FDL_DATA_PATH="$(data_path)"
 if [ -n "${storage[*]+x}" ] && [ "$FDL_DATA_PATH" != "${FDL_STORAGE_DATA:-}" ]; then
     echo "storage key: not used (data files are in $FDL_DATA_PATH, the key reaches ${FDL_STORAGE_DATA:-nothing}); building through a local folder" >&2
     uv run python "$(dirname "$0")/storage_key.py" drop || true
-    trap - EXIT
     unset FDL_STORAGE FDL_STORAGE_DATA FDL_STORAGE_SECRET AWS_CONFIG_FILE
     storage=()
     rm -rf .fdl
@@ -205,7 +215,6 @@ author="${FDL_AUTHOR:-$(git config user.name || echo build)}"
 message="${FDL_MESSAGE:-$([ -n "$built" ] && echo "Update the description" || echo build)}"
 uv run fdl commit "$work" -m "$message${trailer:+$'\n\n'$trailer}" --author "$author" --assets "$assets"
 uv run fdl push "$work"
-rm -rf "$assets"
 
 # Bring apply into main, or ask people to. main is judged at the version its
 # clone got, so a push to main in between is not merged unseen; a push after the
