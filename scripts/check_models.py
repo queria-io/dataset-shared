@@ -47,7 +47,8 @@ INCREMENTAL_YML = re.compile(r"^\s*\+?materialized\s*:\s*['\"]?incremental\b", r
 # taken for the start of a comment.
 COMMENT = re.compile(r"('(?:[^']|'')*')|\{#.*?#\}|--[^\n]*|/\*.*?\*/", re.S)
 # A dbt properties file (one with models:, sources:, seeds: ... at the top), not a tabledoc file.
-DBT_PROPERTIES = re.compile(r"^(?:models|sources|seeds|snapshots|semantic_models|exposures)\s*:", re.M)
+# A file of semantic_models: and metrics: only is left alone: a metric's description has no other place.
+DBT_PROPERTIES = re.compile(r"^(?:models|sources|seeds|snapshots|exposures)\s*:", re.M)
 DESCRIPTION_KEY = re.compile(r"^\s*(?:-\s*)?(description|meta)\s*:", re.M)
 COMMENT_YML = re.compile(r"^\s*#[^\n]*", re.M)
 MAY_REF = {"raw": {"raw"}, "stg": {"raw"}, "mart": {"stg", "mart"}}
@@ -81,9 +82,9 @@ def problems(models: Path) -> list[str]:
         if f.is_file() and INCREMENTAL_YML.search(f.read_text()):
             name = f.name if f.parent == models.parent else f.relative_to(models)
             found.append(f"{name}: incremental set outside the model; set it in the model's config()")
-    for f in sorted(models.rglob("*.yml")):
+    for f in sorted([*models.rglob("*.yml"), *models.rglob("*.yaml")]):
         text = f.read_text()
-        if DBT_PROPERTIES.search(text) and not f.name.endswith(".table.yml") and not re.search(r"^\$schema\s*:", text, re.M):
+        if DBT_PROPERTIES.search(text) and not f.name.endswith((".tabledoc.yml", ".table.yml")) and not re.search(r"^\$schema\s*:", text, re.M):
             keys = sorted({m.group(1) for m in DESCRIPTION_KEY.finditer(COMMENT_YML.sub("", text))})
             if keys:
                 found.append(

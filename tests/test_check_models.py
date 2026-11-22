@@ -94,11 +94,17 @@ class CheckModelsTest(unittest.TestCase):
             **GOOD,
             "a/mart/_models.yml": "models:\n  - name: x\n    description: X\n    config:\n      meta:\n        title: X\n",
             "a/mart/_tests.yml": "models:\n  - name: y\n    columns:\n      - name: id\n        data_tests: [unique]\n",
-            "a/mart/x.table.yml": "$schema: https://queria.io/schemas/table/v1.json\ndescription: X\n",
+            "a/mart/x.tabledoc.yml": "$schema: https://queria.io/schemas/table/v1.json\ndescription: X\n",
+            "a/mart/y.table.yml": "sources:\n  - path: https://x.example\ndescription: Y\n",
+            "a/mart/_metrics.yml": "semantic_models: []\nmetrics:\n  - name: total\n    description: Sum\n",
+            "a/mart/_more.yaml": "models:\n  - name: y\n    description: Y\n",
         })
         self.assertEqual(
             check_models.problems(root),
-            ["a/mart/_models.yml: description and meta in dbt's yml; write the description in the table's own tabledoc file"],
+            [
+                "a/mart/_models.yml: description and meta in dbt's yml; write the description in the table's own tabledoc file",
+                "a/mart/_more.yaml: description in dbt's yml; write the description in the table's own tabledoc file",
+            ],
         )
 
 
