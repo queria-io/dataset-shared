@@ -10,8 +10,8 @@
 #
 # The build reads and writes the working catalog fdl checks out: FDL_WORKING is
 # its path and FDL_DATA_PATH the folder new data files go to (profiles.yml
-# attaches both). tabledoc load writes the description from queria.yml (or
-# tabledoc.yml) and the files beside it into its _queria schema, fdl commit freezes it into a
+# attaches both). tabledoc load writes the description from tabledoc.yml and the
+# files beside it into its _queria schema, fdl commit freezes it into a
 # version, and fdl push uploads it to refs/heads/apply. Only fdl writes under .fdl/.
 #
 # refs/heads/apply holds only versions built from this code, and this code is where
@@ -49,7 +49,7 @@ for file in tabledoc.yml queria.yml; do
     fi
 done
 if [ -z "$described_by" ]; then
-    echo "no tabledoc.yml or queria.yml: tabledoc load reads the description from one of them (move dataset.yml to queria.yml)" >&2
+    echo "no tabledoc.yml: move the description in dataset.yml to tabledoc.yml" >&2
     exit 2
 fi
 name="$(sed -n 's/^name: *//p' "$described_by" 2>/dev/null | head -n 1 || true)"
