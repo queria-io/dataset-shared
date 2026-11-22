@@ -186,9 +186,11 @@ fi
 # tabledoc checks the description and writes it as the _queria tables of the working
 # catalog: the dataset, its tables and columns, and the files (README.md, the
 # tables' guides and the documents). It declares with fdl declare what fdl reads:
-# the primary keys, the asset columns and the other datasets the views read
-# (catalogs in profiles.yml), so it runs where this project's fdl is on PATH
-# (uv run). Into a folder outside .fdl/ it puts the files fdl commit --assets
+# the primary keys, the asset columns, the other datasets the views read
+# (catalogs in profiles.yml), and no profile for its own tables and the tables
+# Queria does not list, so it runs where this project's fdl is on PATH (uv run).
+# It reads the rows it keeps from apply's files with FDL_TOKEN, which in GitHub
+# Actions is the exchanged token (scripts/queria_token.py). Into a folder outside .fdl/ it puts the files fdl commit --assets
 # uploads: those documents, and the files of FDL_ASSETS linked in. From dbt's
 # target/manifest.json it adds each model's SQL and dependencies; when the build
 # was skipped, they stay as apply's _queria holds them. The dataset's own
@@ -198,8 +200,16 @@ assets="$(mktemp -d)"
 load=(--quiet --schema _queria --profiles "${DBT_PROFILES_DIR:-.}/profiles.yml" --out "$assets")
 [ "${FDL_UNDESCRIBED:-}" = unlisted ] && load+=(--unlisted)
 [ -n "${FDL_ASSETS:-}" ] && load+=(--assets "$FDL_ASSETS")
+run_load() {
+    local token
+    if token="$(uv run python "$(dirname "$0")/queria_token.py" 2>/dev/null)"; then
+        FDL_TOKEN="$token" uv run uvx tabledoc@latest load "${load[@]}"
+    else
+        uv run uvx tabledoc@latest load "${load[@]}"
+    fi
+}
 status=0
-uv run uvx tabledoc@latest load "${load[@]}" || status=$?
+run_load || status=$?
 # 2: the catalog could not be read or written, such as apply's _queria when its files
 # cannot be read here. Without the build there is nothing else to take the SQL
 # from, so build. 1 is the description's own error, which a build does not fix.
@@ -208,12 +218,22 @@ if [ "$status" = 2 ] && [ -n "$built" ]; then
     built=
     build "$@"
     status=0
-    uv run uvx tabledoc@latest load "${load[@]}" || status=$?
+    run_load || status=$?
 fi
 [ "$status" = 0 ] || exit "$status"
-# The tables Queria does not list (_queria itself, and with FDL_UNDESCRIBED=unlisted
-# the tables with no description) get no profile.
-uv run python "$(dirname "$0")/declare_profiles.py" "$work" "$FDL_DATA_PATH" _queria
+# The description of earlier versions, in the _meta schema, is replaced by _queria.
+uv run python - "$work" <<'PY'
+import sys
+
+import duckdb
+
+con = duckdb.connect()
+con.execute("INSTALL ducklake; LOAD ducklake; INSTALL sqlite; LOAD sqlite;")
+con.execute(f"ATTACH 'ducklake:{sys.argv[1]}' AS lake (META_TYPE 'sqlite', DATA_INLINING_ROW_LIMIT 0)")
+if con.execute("SELECT 1 FROM duckdb_schemas() WHERE database_name = 'lake' AND schema_name = '_meta'").fetchone():
+    con.execute("DROP SCHEMA lake._meta CASCADE")
+    print("dropped the _meta schema of earlier versions")
+PY
 
 author="${FDL_AUTHOR:-$(git config user.name || echo build)}"
 message="${FDL_MESSAGE:-$([ -n "$built" ] && echo "Update the description" || echo build)}"
