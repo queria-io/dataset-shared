@@ -41,9 +41,10 @@ DESCRIPTION_DIR = "docs/"
 CI_DIR = ".github/"
 WORKFLOWS_DIR = ".github/workflows/"
 TIME_LIMITS = ("timeout_minutes", "timeout-minutes")
-#: The schemas that hold the description and the models' SQL in a version: _queria, or
-#: _meta in the versions written before it. tabledoc load keeps the SQL from either.
-DESCRIBED = ("_queria", "_meta")
+#: The schema that holds the description and the models' SQL in a version. tabledoc
+#: load --schema _queria keeps the SQL from it alone, so a version that holds only
+#: the earlier _meta schema is built.
+DESCRIBED = "_queria"
 
 
 def is_description(path: str) -> bool:
@@ -136,8 +137,8 @@ def changed_since(sha: str) -> list[str] | None:
 def description_only(store) -> str | None:
     """The commit apply was built from, when the checkout changed only the description and .github/ since.
 
-    A version from before the description was kept in the metadata (no _queria or
-    _meta schema) builds, as tabledoc load cannot keep its models' SQL. A push
+    A version with no _queria schema (one from before it, even with the earlier
+    _meta) builds, as tabledoc load cannot keep its models' SQL. A push
     that changed nothing (an empty commit pushed to build again) builds as before.
     """
     from fdl import diff as diffs
@@ -152,7 +153,7 @@ def description_only(store) -> str | None:
     if not changed or checkout is None or not all(keeps_data(path, sha, checkout) for path in changed):
         return None
     tables = (diffs.indexed(store, head) or {}).get("tables") or {}
-    if not any(name.split(".", 1)[0] in DESCRIBED for name in tables):
+    if not any(name.split(".", 1)[0] == DESCRIBED for name in tables):
         print("apply holds no _queria schema, so its SQL cannot be kept: building", file=sys.stderr)
         return None
     return sha

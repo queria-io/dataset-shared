@@ -174,8 +174,9 @@ class DescriptionOnlyTest(unittest.TestCase):
     def test_code_changed(self):
         self.assertIsNone(self._check(["dataset.yml", "main.py"]))
 
-    def test_version_with_meta(self):
-        self.assertEqual(self._check(["dataset.yml"], {"tables": {"_meta.tables": {}}}), SHA)
+    def test_version_with_only_meta_builds(self):
+        # tabledoc load --schema _queria does not read the earlier _meta schema
+        self.assertIsNone(self._check(["dataset.yml"], {"tables": {"_meta.tables": {}}}))
 
     def test_version_before_meta(self):
         self.assertIsNone(self._check(["dataset.yml"], {"tables": {"main.towns": {}}}))

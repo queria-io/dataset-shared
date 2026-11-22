@@ -3,7 +3,7 @@
 README.md「モデルを消したとき」. Each build starts from the last version, so a table
 whose model was removed, renamed or made ephemeral stays in the catalog and goes into
 every later version. build-fdl.sh runs this after the build, before
-`queria metadata pack`, while dbt's target/manifest.json is the one this build wrote.
+`tabledoc load`, while dbt's target/manifest.json is the one this build wrote.
 
 Kept:
 - the tables and views of the models, seeds and snapshots that are not ephemeral

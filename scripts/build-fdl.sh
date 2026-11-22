@@ -154,8 +154,8 @@ export QUERIA_USER_AGENT
 # the data apply holds, without running the dataset's code: the data would come out the same (scripts/built_from.py).
 # With the description unchanged too, fdl commit makes no version. Each version
 # records the commit whose code made its data as a trailer of its message. The
-# SQL and dependencies of the models come from the _queria schema apply holds (or the
-# _meta schema of earlier versions), so a version that holds neither is built.
+# SQL and dependencies of the models come from the _queria schema apply holds, so a
+# version without it (one from before it, with the earlier _meta schema) is built.
 built=
 if [ "${GITHUB_EVENT_NAME:-}" = push ]; then
     built="$(uv run python "$(dirname "$0")/built_from.py" check "$remote")" || built=
