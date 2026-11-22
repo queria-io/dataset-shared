@@ -4,9 +4,10 @@ An incremental model reads what is published already (``{{ this }}``). The
 working catalog that ``fdl clone`` made points at those files over HTTP
 (``https://data.queria.io/datasets/...``), and a private dataset answers 404
 to a read without a token. This plugin gives DuckDB the repository's token as
-an HTTP secret scoped to the repository, each time dbt opens a connection, so
-the token is fresh even after a long download (in GitHub Actions it lasts an
-hour; see queria_token.py).
+an HTTP secret scoped to the repository, each time dbt opens a connection and
+again when each model or test starts. DuckDB does not ask for a new token on a
+401, and a token from GitHub Actions lasts an hour (see queria_token.py), so a
+build longer than that needs the secret replaced as it goes.
 
 profiles.yml (templates/profiles.yml has it):
 
@@ -66,3 +67,9 @@ class Plugin(BasePlugin):
     def configure_connection(self, conn) -> None:
         for statement in statements():
             conn.execute(statement)
+
+    def configure_cursor(self, cursor) -> None:
+        # dbt takes a cursor for each model and test. The secret belongs to the
+        # database, so replacing it here gives every later read the fresh token.
+        for statement in statements():
+            cursor.execute(statement)

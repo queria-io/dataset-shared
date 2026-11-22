@@ -32,8 +32,10 @@ from pathlib import Path
 
 #: The audience Queria accepts in the OIDC token.
 AUDIENCE = "https://queria.io"
-#: A kept token is used again while this many seconds of it remain.
-MARGIN = 10 * 60
+#: A kept token is used again while this many seconds of it remain. dbt hands
+#: the token to DuckDB when a model or test starts (fdl_read.py), and DuckDB
+#: does not ask again on a 401, so the token must outlive the longest model.
+MARGIN = 45 * 60
 
 
 def _post(url: str, body: dict, headers: dict | None = None) -> dict:
