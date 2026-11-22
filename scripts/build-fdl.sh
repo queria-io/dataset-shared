@@ -185,20 +185,21 @@ fi
 
 # tabledoc checks the description and writes it as the _queria tables of the working
 # catalog: the dataset, its tables and columns, and the files (README.md, the
-# tables' guides and the documents). Into
-# a folder outside .fdl/ it puts the files fdl commit --assets uploads: those
-# documents, and the files of FDL_ASSETS linked in. From dbt's
-# target/manifest.json it adds each model's SQL and dependencies, and from
-# profiles.yml the other datasets it attaches (catalogs); when the build was
-# skipped, they stay as apply's _queria holds them. The dataset's own environment
-# may not hold tabledoc, so it runs as a tool; @latest: uvx otherwise reuses
-# whatever tabledoc it cached first.
+# tables' guides and the documents). It declares with fdl declare what fdl reads:
+# the primary keys, the asset columns and the other datasets the views read
+# (catalogs in profiles.yml), so it runs where this project's fdl is on PATH
+# (uv run). Into a folder outside .fdl/ it puts the files fdl commit --assets
+# uploads: those documents, and the files of FDL_ASSETS linked in. From dbt's
+# target/manifest.json it adds each model's SQL and dependencies; when the build
+# was skipped, they stay as apply's _queria holds them. The dataset's own
+# environment may not hold tabledoc, so it runs as a tool; @latest: uvx otherwise
+# reuses whatever tabledoc it cached first.
 assets="$(mktemp -d)"
 load=(--quiet --schema _queria --profiles "${DBT_PROFILES_DIR:-.}/profiles.yml" --out "$assets")
 [ "${FDL_UNDESCRIBED:-}" = unlisted ] && load+=(--unlisted)
 [ -n "${FDL_ASSETS:-}" ] && load+=(--assets "$FDL_ASSETS")
 status=0
-uvx tabledoc@latest load "${load[@]}" || status=$?
+uv run uvx tabledoc@latest load "${load[@]}" || status=$?
 # 2: the catalog could not be read or written, such as apply's _queria when its files
 # cannot be read here. Without the build there is nothing else to take the SQL
 # from, so build. 1 is the description's own error, which a build does not fix.
@@ -207,9 +208,12 @@ if [ "$status" = 2 ] && [ -n "$built" ]; then
     built=
     build "$@"
     status=0
-    uvx tabledoc@latest load "${load[@]}" || status=$?
+    uv run uvx tabledoc@latest load "${load[@]}" || status=$?
 fi
 [ "$status" = 0 ] || exit "$status"
+# The tables Queria does not list (_queria itself, and with FDL_UNDESCRIBED=unlisted
+# the tables with no description) get no profile.
+uv run python "$(dirname "$0")/declare_profiles.py" "$work" "$FDL_DATA_PATH" _queria
 
 author="${FDL_AUTHOR:-$(git config user.name || echo build)}"
 message="${FDL_MESSAGE:-$([ -n "$built" ] && echo "Update the description" || echo build)}"
