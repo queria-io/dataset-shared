@@ -49,5 +49,23 @@ class SetupTest(unittest.TestCase):
             self.assertEqual(fdl_read.statements(), [])
 
 
+class CursorTest(unittest.TestCase):
+    def test_each_cursor_replaces_the_secret_with_a_fresh_token(self):
+        executed = []
+
+        class Recorder:
+            def execute(self, statement):
+                executed.append(statement)
+
+        plugin = fdl_read.Plugin.__new__(fdl_read.Plugin)
+        tokens = iter(["first", "second"])
+        with unittest.mock.patch.object(fdl_read, "_token", lambda remote: next(tokens)), \
+                unittest.mock.patch.dict("os.environ", {"FDL_WORKING": working({"remote": REMOTE})}):
+            plugin.configure_connection(Recorder())
+            plugin.configure_cursor(Recorder())
+        self.assertEqual(len(executed), 2)
+        self.assertIn("'first'", executed[0])
+        self.assertIn("'second'", executed[1])
+
 if __name__ == "__main__":
     unittest.main()
