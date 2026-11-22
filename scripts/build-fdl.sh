@@ -38,9 +38,20 @@ if [ "$#" -eq 0 ]; then
     set -- python main.py
 fi
 
-# queria.yml, or dataset.yml in a repository that still keeps the older files.
-described_by=queria.yml
-[ -f "$described_by" ] || described_by=dataset.yml
+# tabledoc.yml, or queria.yml in a repository that still keeps the older file: the
+# files tabledoc load reads. It does not read dataset.yml, so a repository with only
+# that stops here instead of after the build.
+described_by=
+for file in tabledoc.yml queria.yml; do
+    if [ -f "$file" ]; then
+        described_by="$file"
+        break
+    fi
+done
+if [ -z "$described_by" ]; then
+    echo "no tabledoc.yml or queria.yml: tabledoc load reads the description from one of them (move dataset.yml to queria.yml)" >&2
+    exit 2
+fi
 name="$(sed -n 's/^name: *//p' "$described_by" 2>/dev/null | head -n 1 || true)"
 if [ -z "$name" ]; then
     echo "$described_by has no name" >&2
@@ -190,22 +201,43 @@ fi
 # (catalogs in profiles.yml), and no profile for its own tables and the tables
 # Queria does not list, so it runs where this project's fdl is on PATH (uv run).
 # It reads the rows it keeps from apply's files with FDL_TOKEN, which in GitHub
-# Actions is the exchanged token (scripts/queria_token.py). Into a folder outside .fdl/ it puts the files fdl commit --assets
-# uploads: those documents, and the files of FDL_ASSETS linked in. From dbt's
+# Actions is the exchanged token (scripts/queria_token.py) and elsewhere FDL_TOKEN
+# or QUERIA_TOKEN, else the token fdl reads the remote with (its helper after `queria login`).
+# Into a folder outside .fdl/ it puts the files fdl commit --assets uploads:
+# those documents, and the files of FDL_ASSETS linked in. From dbt's
 # target/manifest.json it adds each model's SQL and dependencies; when the build
 # was skipped, they stay as apply's _queria holds them. The dataset's own
-# environment may not hold tabledoc, so it runs as a tool; @latest: uvx otherwise
-# reuses whatever tabledoc it cached first.
+# environment may not hold tabledoc, so it runs as a tool: the newest, and at
+# least the first that writes _queria (--schema) and runs fdl declare.
+# --isolated: uvx otherwise runs a tabledoc installed with `uv tool install` whenever
+# it meets the bound, however old (uvx ignores --upgrade-package for it).
+# --refresh-package: uvx otherwise resolves against the index it cached.
+tabledoc=(uvx --isolated --refresh-package tabledoc --from "tabledoc>=0.3.1" tabledoc)
 assets="$(mktemp -d)"
 load=(--quiet --schema _queria --profiles "${DBT_PROFILES_DIR:-.}/profiles.yml" --out "$assets")
 [ "${FDL_UNDESCRIBED:-}" = unlisted ] && load+=(--unlisted)
 [ -n "${FDL_ASSETS:-}" ] && load+=(--assets "$FDL_ASSETS")
+fdl_token() {
+    uv run python "$(dirname "$0")/queria_token.py" 2>/dev/null && return 0
+    # Otherwise the token fdl itself reads the remote with: its credential helper
+    # (`queria login` on this machine) answers when FDL_TOKEN is not set.
+    uv run python - "$remote" <<'PY'
+import sys
+
+from fdl.stores import credentials_for
+
+token = credentials_for(sys.argv[1])
+if not token:
+    sys.exit(1)
+print(token)
+PY
+}
 run_load() {
     local token
-    if token="$(uv run python "$(dirname "$0")/queria_token.py" 2>/dev/null)"; then
-        FDL_TOKEN="$token" uv run uvx tabledoc@latest load "${load[@]}"
+    if token="$(fdl_token)"; then
+        FDL_TOKEN="$token" uv run "${tabledoc[@]}" load "${load[@]}"
     else
-        uv run uvx tabledoc@latest load "${load[@]}"
+        uv run "${tabledoc[@]}" load "${load[@]}"
     fi
 }
 status=0
