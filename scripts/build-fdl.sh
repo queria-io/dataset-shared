@@ -201,8 +201,10 @@ fi
 # those documents, and the files of FDL_ASSETS linked in. From dbt's
 # target/manifest.json it adds each model's SQL and dependencies; when the build
 # was skipped, they stay as apply's _queria holds them. The dataset's own
-# environment may not hold tabledoc, so it runs as a tool; @latest: uvx otherwise
-# reuses whatever tabledoc it cached first.
+# environment may not hold tabledoc, so it runs as a tool: the newest, and at
+# least the first that writes _queria (--schema) and runs fdl declare.
+# --upgrade-package: uvx otherwise reuses whatever tabledoc it cached first.
+tabledoc=(uvx --upgrade-package tabledoc --from "tabledoc>=0.3.1" tabledoc)
 assets="$(mktemp -d)"
 load=(--quiet --schema _queria --profiles "${DBT_PROFILES_DIR:-.}/profiles.yml" --out "$assets")
 [ "${FDL_UNDESCRIBED:-}" = unlisted ] && load+=(--unlisted)
@@ -225,9 +227,9 @@ PY
 run_load() {
     local token
     if token="$(fdl_token)"; then
-        FDL_TOKEN="$token" uv run uvx tabledoc@latest load "${load[@]}"
+        FDL_TOKEN="$token" uv run "${tabledoc[@]}" load "${load[@]}"
     else
-        uv run uvx tabledoc@latest load "${load[@]}"
+        uv run "${tabledoc[@]}" load "${load[@]}"
     fi
 }
 status=0
