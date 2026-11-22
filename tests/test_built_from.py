@@ -21,8 +21,10 @@ SHA = "0123456789abcdef0123456789abcdef01234567"
 class DescriptionTest(unittest.TestCase):
     def test_description_files(self):
         for path in (
+            "tabledoc.yml",
             "queria.yml",
             "README.md",
+            "models/a/population.tabledoc.yml",
             "models/a/population.md",
             "models/README.md",
             "docs/index.md",

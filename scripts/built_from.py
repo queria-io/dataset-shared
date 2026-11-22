@@ -31,8 +31,9 @@ _TRAILER = re.compile(rf"^{TRAILER}: ([0-9a-f]{{40}})$", re.MULTILINE)
 #: The files tabledoc reads the dataset's description from (tabledoc.yml, queria.yml, and
 #: the older dataset.yml). Anything else may change the data.
 DESCRIPTION_FILES = ("tabledoc.yml", "queria.yml", "dataset.yml")
-#: Markdown anywhere (the tables' files, README.md, documents) and the older table files.
-DESCRIPTION_PATTERNS = ("*.md", "*.table.yml")
+#: Markdown anywhere (the tables' guides, README.md, documents), the tables' files
+#: beside the models (<model>.tabledoc.yml) and the older table files.
+DESCRIPTION_PATTERNS = ("*.md", "*.tabledoc.yml", "*.table.yml")
 DESCRIPTION_DIR = "docs/"
 #: The GitHub settings. A workflow also passes the build its inputs (secrets, mode,
 #: the runner, the pinned shared workflow), so it keeps the data only when its jobs
