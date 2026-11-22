@@ -208,11 +208,11 @@ fi
 # target/manifest.json it adds each model's SQL and dependencies; when the build
 # was skipped, they stay as apply's _queria holds them. The dataset's own
 # environment may not hold tabledoc, so it runs as a tool: the newest, and at
-# least the first that writes _queria (--schema) and runs fdl declare.
+# least the first that reads <model>.tabledoc.yml beside each model's SQL.
 # --isolated: uvx otherwise runs a tabledoc installed with `uv tool install` whenever
 # it meets the bound, however old (uvx ignores --upgrade-package for it).
 # --refresh-package: uvx otherwise resolves against the index it cached.
-tabledoc=(uvx --isolated --refresh-package tabledoc --from "tabledoc>=0.3.1" tabledoc)
+tabledoc=(uvx --isolated --refresh-package tabledoc --from "tabledoc>=0.5.0" tabledoc)
 assets="$(mktemp -d)"
 load=(--quiet --schema _queria --profiles "${DBT_PROFILES_DIR:-.}/profiles.yml" --out "$assets")
 [ "${FDL_UNDESCRIBED:-}" = unlisted ] && load+=(--unlisted)

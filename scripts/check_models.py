@@ -10,6 +10,9 @@ runs it before the build, so a model that breaks a rule makes no version.
 - an incremental model has a unique_key or an is_incremental() block, so building
   the same input again adds no row twice; incremental is set in the model's own
   config(), not in dbt_project.yml or a .yml file, so this check can see it
+- dbt's yml holds no description: no `description` and no `meta` (README.md「メタデータ」).
+  The description of a table goes in its own tabledoc table file, so each table's
+  description is a file of its own
 
 Only refs with a literal name are checked, and reads and refs inside macros are
 not followed.
@@ -43,6 +46,11 @@ INCREMENTAL_YML = re.compile(r"^\s*\+?materialized\s*:\s*['\"]?incremental\b", r
 # String literals are kept, so a glob such as 'data/*/x' or '--' in a string is not
 # taken for the start of a comment.
 COMMENT = re.compile(r"('(?:[^']|'')*')|\{#.*?#\}|--[^\n]*|/\*.*?\*/", re.S)
+# A dbt properties file (one with models:, sources:, seeds: ... at the top), not a tabledoc file.
+# A file of semantic_models: and metrics: only is left alone: a metric's description has no other place.
+DBT_PROPERTIES = re.compile(r"^(?:models|sources|seeds|snapshots|exposures)\s*:", re.M)
+DESCRIPTION_KEY = re.compile(r"^\s*(?:-\s*)?(description|meta)\s*:", re.M)
+COMMENT_YML = re.compile(r"^\s*#[^\n]*", re.M)
 MAY_REF = {"raw": {"raw"}, "stg": {"raw"}, "mart": {"stg", "mart"}}
 
 
@@ -74,6 +82,15 @@ def problems(models: Path) -> list[str]:
         if f.is_file() and INCREMENTAL_YML.search(f.read_text()):
             name = f.name if f.parent == models.parent else f.relative_to(models)
             found.append(f"{name}: incremental set outside the model; set it in the model's config()")
+    for f in sorted([*models.rglob("*.yml"), *models.rglob("*.yaml")]):
+        text = f.read_text()
+        if DBT_PROPERTIES.search(text) and not f.name.endswith((".tabledoc.yml", ".table.yml")) and not re.search(r"^\$schema\s*:", text, re.M):
+            keys = sorted({m.group(1) for m in DESCRIPTION_KEY.finditer(COMMENT_YML.sub("", text))})
+            if keys:
+                found.append(
+                    f"{f.relative_to(models)}: {' and '.join(keys)} in dbt's yml; "
+                    "write the description in the table's own tabledoc file"
+                )
     return found
 
 
