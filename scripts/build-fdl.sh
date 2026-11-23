@@ -99,9 +99,17 @@ if [ "${FDL_DIRECT:-0}" = 1 ] \
     storage=(--storage "$FDL_STORAGE")
 fi
 
-# What fdl status --json says of a working catalog: $2 of $1.
+# What fdl status --json says of a working catalog: $2 of $1. fdl-cli before 0.35
+# does not give remote, base and data_path there, so the build stops with that said.
 fdl_status() {
-    uv run fdl status "$1" --json | uv run python -c 'import json, sys; print(json.load(sys.stdin)[sys.argv[1]] or "")' "$2"
+    uv run fdl status "$1" --json | uv run python -c '
+import json, sys
+
+status = json.load(sys.stdin)
+if sys.argv[1] not in status:
+    sys.exit(f"fdl status --json gives no {sys.argv[1]}: the build needs fdl-cli 0.35 or later")
+print(status[sys.argv[1]] or "")
+' "$2"
 }
 
 # Where the build writes new data files (fdl status's data_path). Over HTTP clone
