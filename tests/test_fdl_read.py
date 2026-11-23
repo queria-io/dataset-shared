@@ -23,7 +23,9 @@ def working(state: dict | None) -> str:
     folder = Path(tempfile.mkdtemp())
     path = folder / "work.sqlite"
     if state is not None:
-        path.with_name(path.name + ".fdl.json").write_text(json.dumps(state))
+        state_file = path.with_name(path.name + ".fdl") / "state.json"
+        state_file.parent.mkdir()
+        state_file.write_text(json.dumps(state))
     return str(path)
 
 

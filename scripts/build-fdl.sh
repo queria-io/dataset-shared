@@ -117,7 +117,7 @@ import json, sqlite3, sys
 from pathlib import Path
 
 work = Path(sys.argv[1])
-state = json.loads(work.with_name(work.name + ".fdl.json").read_text())
+state = json.loads((work.with_name(work.name + ".fdl") / "state.json").read_text())
 if "data" in state:
     print(Path(state["data"]).resolve().as_posix() + "/")
 elif "storage" in state:
@@ -279,7 +279,7 @@ main=".fdl/main.sqlite"
 decision="$(uv run python "$(dirname "$0")/sync_branch.py" "$remote")"
 if [ "$decision" != new ]; then
     uv run fdl clone "$remote" "$main" >/dev/null
-    base="$(uv run python -c 'import json, sys; print(json.load(open(sys.argv[1]))["base"])' "$main.fdl.json")"
+    base="$(uv run python -c 'import json, sys; print(json.load(open(sys.argv[1]))["base"])' "$main.fdl/state.json")"
     decision="$(uv run python "$(dirname "$0")/sync_branch.py" "$remote" "$base")"
 fi
 request=
