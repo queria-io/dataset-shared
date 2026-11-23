@@ -28,12 +28,11 @@ from pathlib import PurePosixPath
 TRAILER = "Built-From"
 _TRAILER = re.compile(rf"^{TRAILER}: ([0-9a-f]{{40}})$", re.MULTILINE)
 
-#: The files tabledoc reads the dataset's description from (tabledoc.yml, queria.yml, and
-#: the older dataset.yml). Anything else may change the data.
-DESCRIPTION_FILES = ("tabledoc.yml", "queria.yml", "dataset.yml")
-#: Markdown anywhere (the tables' guides, README.md, documents), the tables' files
-#: beside the models (<model>.tabledoc.yml) and the older table files.
-DESCRIPTION_PATTERNS = ("*.md", "*.tabledoc.yml", "*.table.yml")
+#: The file tabledoc reads the dataset's description from. Anything else may change the data.
+DESCRIPTION_FILES = ("tabledoc.yml",)
+#: Markdown anywhere (the tables' guides, README.md, documents) and the tables' files
+#: beside the models (<model>.tabledoc.yml).
+DESCRIPTION_PATTERNS = ("*.md", "*.tabledoc.yml")
 DESCRIPTION_DIR = "docs/"
 #: The GitHub settings. A workflow also passes the build its inputs (secrets, mode,
 #: the runner, the pinned shared workflow), so it keeps the data only when its jobs
@@ -43,9 +42,9 @@ CI_DIR = ".github/"
 WORKFLOWS_DIR = ".github/workflows/"
 TIME_LIMITS = ("timeout_minutes", "timeout-minutes")
 #: The schema that holds the description and the models' SQL in a version. tabledoc
-#: load --schema _queria keeps the SQL from it alone, so a version that holds only
-#: the earlier _meta schema is built.
-DESCRIBED = "_queria"
+#: load keeps the SQL from it alone, so a version that holds only the earlier _queria
+#: or _meta schema is built.
+DESCRIBED = "_tabledoc"
 
 
 def is_description(path: str) -> bool:
@@ -138,8 +137,8 @@ def changed_since(sha: str) -> list[str] | None:
 def description_only(store) -> str | None:
     """The commit apply was built from, when the checkout changed only the description and .github/ since.
 
-    A version with no _queria schema (one from before it, even with the earlier
-    _meta) builds, as tabledoc load cannot keep its models' SQL. A push
+    A version with no _tabledoc schema (one from before it, even with the earlier
+    _queria or _meta) builds, as tabledoc load cannot keep its models' SQL. A push
     that changed nothing (an empty commit pushed to build again) builds as before.
     """
     from fdl import diff as diffs
@@ -155,7 +154,7 @@ def description_only(store) -> str | None:
         return None
     tables = (diffs.indexed(store, head) or {}).get("tables") or {}
     if not any(name.split(".", 1)[0] == DESCRIBED for name in tables):
-        print("apply holds no _queria schema, so its SQL cannot be kept: building", file=sys.stderr)
+        print("apply holds no _tabledoc schema, so its SQL cannot be kept: building", file=sys.stderr)
         return None
     return sha
 

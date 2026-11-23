@@ -22,19 +22,16 @@ class DescriptionTest(unittest.TestCase):
     def test_description_files(self):
         for path in (
             "tabledoc.yml",
-            "queria.yml",
             "README.md",
             "models/a/population.tabledoc.yml",
             "models/a/population.md",
             "models/README.md",
             "docs/index.md",
-            "dataset.yml",
-            "models/a/population.table.yml",
         ):
             self.assertTrue(built_from.is_description(path), path)
 
     def test_code_and_other_files(self):
-        for path in ("models/a/population.sql", "main.py", "uv.lock", "shared", "profiles.yml"):
+        for path in ("models/a/population.sql", "main.py", "uv.lock", "shared", "profiles.yml", "queria.yml", "dataset.yml"):
             self.assertFalse(built_from.is_description(path), path)
 
 
@@ -68,7 +65,7 @@ class KeepsDataTest(unittest.TestCase):
         return subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
 
     def test_description_and_other_settings(self):
-        for path in ("README.md", "queria.yml", ".github/dependabot.yml"):
+        for path in ("README.md", "tabledoc.yml", ".github/dependabot.yml"):
             self.assertTrue(built_from.keeps_data(path, self.before, self.before), path)
 
     def test_code_and_shared(self):
@@ -111,7 +108,7 @@ class ChangedSinceTest(unittest.TestCase):
             ["config", "commit.gpgsign", "false"],
         ):
             subprocess.run(["git", *args], check=True)
-        Path("dataset.yml").write_text("name: x\n")
+        Path("tabledoc.yml").write_text("name: x\n")
         Path("main.py").write_text("print(1)\n")
         self.first = self._commit()
 
@@ -130,9 +127,9 @@ class ChangedSinceTest(unittest.TestCase):
             return built_from.changed_since(self.first)
 
     def test_description_only(self):
-        Path("dataset.yml").write_text("name: x\ntitle: X\n")
+        Path("tabledoc.yml").write_text("name: x\ntitle: X\n")
         head = self._commit()
-        self.assertEqual(self._changed(head), ["dataset.yml"])
+        self.assertEqual(self._changed(head), ["tabledoc.yml"])
 
     def test_code_changed(self):
         Path("main.py").write_text("print(2)\n")
@@ -159,7 +156,7 @@ class ChangedSinceTest(unittest.TestCase):
 class DescriptionOnlyTest(unittest.TestCase):
     """Whether to skip, given the paths changed since the commit apply records."""
 
-    WITH_DESCRIPTION = {"tables": {"_queria.tables": {}, "main.towns": {}}}
+    WITH_DESCRIPTION = {"tables": {"_tabledoc.tables": {}, "main.towns": {}}}
 
     def _check(self, changed, indexed=WITH_DESCRIPTION):
         head = mock.Mock(message=f"build\n\nBuilt-From: {SHA}")
@@ -171,17 +168,18 @@ class DescriptionOnlyTest(unittest.TestCase):
             return built_from.description_only(object())
 
     def test_description_changed(self):
-        self.assertEqual(self._check(["dataset.yml"]), SHA)
+        self.assertEqual(self._check(["tabledoc.yml"]), SHA)
 
     def test_code_changed(self):
-        self.assertIsNone(self._check(["dataset.yml", "main.py"]))
+        self.assertIsNone(self._check(["tabledoc.yml", "main.py"]))
 
-    def test_version_with_only_meta_builds(self):
-        # tabledoc load --schema _queria does not read the earlier _meta schema
-        self.assertIsNone(self._check(["dataset.yml"], {"tables": {"_meta.tables": {}}}))
+    def test_version_with_only_an_earlier_schema_builds(self):
+        # tabledoc load does not read the earlier _queria and _meta schemas
+        for schema in ("_queria", "_meta"):
+            self.assertIsNone(self._check(["tabledoc.yml"], {"tables": {f"{schema}.tables": {}}}), schema)
 
     def test_version_before_meta(self):
-        self.assertIsNone(self._check(["dataset.yml"], {"tables": {"main.towns": {}}}))
+        self.assertIsNone(self._check(["tabledoc.yml"], {"tables": {"main.towns": {}}}))
 
     def test_ci_changed(self):
         self.assertEqual(self._check([".github/dependabot.yml"]), SHA)
