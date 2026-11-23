@@ -119,6 +119,29 @@ jobs:
           # leave no token in .git/config for them
           persist-credentials: false
 
+      # 各リポは dataset-shared を `@main` で呼ぶ。submodule が指すコミットではなく、
+      # この workflow と同じコミットの dataset-shared でビルドする。待ち行列にいるあいだに
+      # main が進んでも、workflow とスクリプトのコミットはずれない。
+      # コミットはジョブの OIDC トークンの job_workflow_sha で知る (呼び出し側の id-token: write)
+      - name: Check out dataset-shared at this workflow's commit
+        run: |
+          sha="$(python3 - <<'PY'
+          import base64, json, os, sys, urllib.request
+          url = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL")
+          bearer = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
+          if not url or not bearer:
+              sys.exit("no OIDC token: the calling job needs permissions: id-token: write")
+          req = urllib.request.Request(url, headers={"Authorization": f"Bearer {bearer}"})
+          token = json.load(urllib.request.urlopen(req, timeout=30))["value"]
+          payload = token.split(".")[1]
+          claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+          print(claims["job_workflow_sha"])
+          PY
+          )"
+          git -C shared fetch --quiet --depth=1 origin "$sha"
+          git -C shared checkout --quiet --detach "$sha"
+          echo "dataset-shared: $sha"
+
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true

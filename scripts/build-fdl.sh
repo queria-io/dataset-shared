@@ -158,7 +158,8 @@ export QUERIA_USER_AGENT
 # its time limit) since apply's last build makes a version of the new description on
 # the data apply holds, without running the dataset's code: the data would come out the same (scripts/built_from.py).
 # With the description unchanged too, fdl commit makes no version. Each version
-# records the commit whose code made its data as a trailer of its message. The
+# records the commit whose code made its data and the commit of dataset-shared it was
+# built with as trailers of its message; another commit of dataset-shared builds. The
 # SQL and dependencies of the models come from the _tabledoc schema apply holds, so a
 # version without it (one from before it, with the earlier _queria or _meta schema) is built.
 built=
@@ -183,7 +184,7 @@ build() {
 if [ -n "$built" ]; then
     echo "only the description or .github/ changed since the build from $built: not running the build"
     rm -f target/manifest.json
-    trailer="Built-From: $built"
+    trailer="$(uv run python "$(dirname "$0")/built_from.py" trailer "$built")"
 else
     build "$@"
 fi

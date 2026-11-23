@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import built_from  # noqa: E402
 
 SHA = "0123456789abcdef0123456789abcdef01234567"
+SHARED = "89abcdef0123456789abcdef0123456789abcdef"
 
 
 class DescriptionTest(unittest.TestCase):
@@ -93,6 +94,19 @@ class TrailerTest(unittest.TestCase):
         self.assertIsNone(built_from.built_from("build"))
         self.assertIsNone(built_from.built_from("Built-From: abc"))
 
+    def test_reads_the_shared_trailer(self):
+        message = f"build\n\nBuilt-From: {SHA}\nShared: {SHARED}"
+        self.assertEqual(built_from.built_with(message), SHARED)
+        self.assertIsNone(built_from.built_with(f"build\n\nBuilt-From: {SHA}"))
+
+    def test_prints_both_trailers(self):
+        env = {"GITHUB_ACTIONS": "true", "GITHUB_SHA": "f" * 40}
+        with mock.patch.dict(os.environ, env), \
+                mock.patch.object(built_from, "shared_commit", return_value=SHARED), \
+                mock.patch("sys.stdout", new_callable=__import__("io").StringIO) as out:
+            built_from.main(["trailer", SHA])
+        self.assertEqual(out.getvalue(), f"Built-From: {SHA}\nShared: {SHARED}\n")
+
 
 class ChangedSinceTest(unittest.TestCase):
     """A real repository: the commit recorded, then a change to the description or the code."""
@@ -158,9 +172,10 @@ class DescriptionOnlyTest(unittest.TestCase):
 
     WITH_DESCRIPTION = {"tables": {"_tabledoc.tables": {}, "main.towns": {}}}
 
-    def _check(self, changed, indexed=WITH_DESCRIPTION):
-        head = mock.Mock(message=f"build\n\nBuilt-From: {SHA}")
+    def _check(self, changed, indexed=WITH_DESCRIPTION, recorded=f"\nShared: {SHARED}", shared=SHARED):
+        head = mock.Mock(message=f"build\n\nBuilt-From: {SHA}{recorded}")
         with mock.patch("fdl.repo.head", return_value=head), \
+                mock.patch.object(built_from, "shared_commit", return_value=shared), \
                 mock.patch("fdl.diff.indexed", return_value=indexed), \
                 mock.patch.object(built_from, "changed_since", return_value=changed), \
                 mock.patch.object(built_from, "checkout_commit", return_value="f" * 40), \
@@ -189,6 +204,12 @@ class DescriptionOnlyTest(unittest.TestCase):
 
     def test_shared_moved(self):
         self.assertIsNone(self._check([".github/workflows/sync.yml", "shared"]))
+
+    def test_shared_main_moved(self):
+        self.assertIsNone(self._check(["tabledoc.yml"], shared="e" * 40))
+
+    def test_no_shared_recorded(self):
+        self.assertIsNone(self._check(["tabledoc.yml"], recorded=""))
 
     def test_nothing_changed_builds(self):
         self.assertIsNone(self._check([]))

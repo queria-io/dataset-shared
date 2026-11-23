@@ -51,7 +51,7 @@ sed 's/DATASET_NAME/<name>/g' shared/templates/profiles.yml > profiles.yml
 
 ## 提供スクリプト
 
-- `scripts/build-fdl.sh`: `refs/heads/apply` ブランチで `fdl clone` → ビルド → `fdl commit` → `fdl push` を回し、apply を main に取り込む。apply ブランチにはこのコードから作ったバージョンだけが積まれる。main に前回のビルドより後の人の変更（`fdl clone` と `fdl push`、apply 以外からの変更リクエストのマージ）が無ければ `fdl merge` して main を進め、あれば apply からの変更リクエストを作って人が確認するまで main を変えない（`scripts/sync_branch.py`）。merge が衝突したときや main に push できないとき（承認必須のデータセット）も変更リクエストにする。apply は main を取り込まないので、main で行や説明を変えると以後のビルドが毎回変更リクエストになる。説明はこのリポジトリのファイルで変更し、データの誤りは元データの公開元に報告する。commit の前に `tabledoc load`（[tabledoc](https://github.com/queria-io/tabledoc)）が説明を検査し、作業カタログの `_tabledoc` スキーマのテーブル（普通の DuckLake のテーブル）に書き直す。説明と README.md・テーブルのガイドなどのファイルは、データと同じバージョンに入る。主キー・asset 列・ビューが読む別のデータセットと、`_tabledoc` のテーブルや `FDL_UNDESCRIBED=hidden` で説明の無いテーブルにプロファイルを作らないことは、tabledoc が `fdl declare` で宣言する。それより前のバージョンの説明を持つ `_queria`・`_meta` スキーマは、load の後に削除する。あわせて `fdl commit --assets` に渡すファイル（README.md・テーブルのガイド・ドキュメントと、`FDL_ASSETS` のファイルへのリンク）を `.fdl/` の外の一時フォルダに書き出す。`.fdl/` の下には fdl だけが書く。ビルドが dbt の `target/manifest.json` を書いたときは、モデルの SQL（`sql`）と依存先（`depends_on`）、profiles.yml が読むだけで ATTACH する公開データセットのエイリアス（`catalogs`）も tabledoc が入れる。記述に書いた値が優先される。main への push で、前回のビルドから説明のファイル（tabledoc.yml・モデルの隣の `*.tabledoc.yml`・Markdown・docs/）と `.github/`（ワークフローは打ち切り時間の変更だけ）しか変わっていないときは、ビルドを実行せず、apply のデータのまま新しい説明でバージョンを作る（SQL と依存先は apply の先頭の `_tabledoc` から引き継ぐ。apply の先頭が `_tabledoc` を持たないバージョン（それより前の `_queria` や `_meta` だけを持つバージョンを含む）のときと、そのファイルを読めないときはビルドする）。説明も変わっていなければバージョンを作らない。`shared` の submodule を上げたときはビルドする。どのコミットのコードでデータを作ったかは、各バージョンのメッセージの `Built-From: <SHA>` に記録する（`scripts/built_from.py`）。スケジュールと手動の実行は常にビルドする
+- `scripts/build-fdl.sh`: `refs/heads/apply` ブランチで `fdl clone` → ビルド → `fdl commit` → `fdl push` を回し、apply を main に取り込む。apply ブランチにはこのコードから作ったバージョンだけが積まれる。main に前回のビルドより後の人の変更（`fdl clone` と `fdl push`、apply 以外からの変更リクエストのマージ）が無ければ `fdl merge` して main を進め、あれば apply からの変更リクエストを作って人が確認するまで main を変えない（`scripts/sync_branch.py`）。merge が衝突したときや main に push できないとき（承認必須のデータセット）も変更リクエストにする。apply は main を取り込まないので、main で行や説明を変えると以後のビルドが毎回変更リクエストになる。説明はこのリポジトリのファイルで変更し、データの誤りは元データの公開元に報告する。commit の前に `tabledoc load`（[tabledoc](https://github.com/queria-io/tabledoc)）が説明を検査し、作業カタログの `_tabledoc` スキーマのテーブル（普通の DuckLake のテーブル）に書き直す。説明と README.md・テーブルのガイドなどのファイルは、データと同じバージョンに入る。主キー・asset 列・ビューが読む別のデータセットと、`_tabledoc` のテーブルや `FDL_UNDESCRIBED=hidden` で説明の無いテーブルにプロファイルを作らないことは、tabledoc が `fdl declare` で宣言する。それより前のバージョンの説明を持つ `_queria`・`_meta` スキーマは、load の後に削除する。あわせて `fdl commit --assets` に渡すファイル（README.md・テーブルのガイド・ドキュメントと、`FDL_ASSETS` のファイルへのリンク）を `.fdl/` の外の一時フォルダに書き出す。`.fdl/` の下には fdl だけが書く。ビルドが dbt の `target/manifest.json` を書いたときは、モデルの SQL（`sql`）と依存先（`depends_on`）、profiles.yml が読むだけで ATTACH する公開データセットのエイリアス（`catalogs`）も tabledoc が入れる。記述に書いた値が優先される。main への push で、前回のビルドから説明のファイル（tabledoc.yml・モデルの隣の `*.tabledoc.yml`・Markdown・docs/）と `.github/`（ワークフローは打ち切り時間の変更だけ）しか変わっていないときは、ビルドを実行せず、apply のデータのまま新しい説明でバージョンを作る（SQL と依存先は apply の先頭の `_tabledoc` から引き継ぐ。apply の先頭が `_tabledoc` を持たないバージョン（それより前の `_queria` や `_meta` だけを持つバージョンを含む）のときと、そのファイルを読めないときはビルドする）。説明も変わっていなければバージョンを作らない。前回のビルドと dataset-shared のコミットが違うときはビルドする。どのコミットのコードでデータを作ったかは各バージョンのメッセージの `Built-From: <SHA>` に、使った dataset-shared のコミットは `Shared: <SHA>` に記録する（`scripts/built_from.py`）。スケジュールと手動の実行は常にビルドする
 
 ## 取得の共通部品
 
@@ -109,20 +109,24 @@ build_plans_parquet(user_agent=USER_AGENT, pdf_dir=Path("data/plans"), parquet_d
 - サイトが移転してシートの URL が転送のお知らせになっているときは、`moved`（シートの URL の先頭 → 移転先の URL の先頭の辞書）を渡す。移転先が `hosts` のサイトになる URL も集め、移転先から取得する。`url` はシートの URL のまま、取得した URL は `fetched_url` に入る
 - 通常の HTTP クライアントでは取得できないサイトは、`fetch`（URL と保存先を受け、`fetch_file` と同じ形の行を返す関数。取得できない URL は `None`）を渡す。省くと `fetch_plan(user_agent)` で、`shared/fetch.py` の `fetch_file` を使う
 
-### submodule の版を上げる
+### どのコミットの dataset-shared で動くか
 
-各データセットリポは `shared` のコミットと、呼び出すワークフロー（`uses: queria-io/dataset-shared/.github/workflows/<name>@<SHA>`）を同じ SHA に固定している。ここを直しても、各リポで固定を上げる PR をマージするまでは効かない。dataset-shared の main に誤って入った変更が、全データセットのシークレットと書き込み権を持って一度に動かないようにするため。上げる PR では dataset-shared の差分を確認する。
+各データセットリポは共通のワークフローを `uses: queria-io/dataset-shared/.github/workflows/<name>@main` で呼ぶ。dataset-shared の main にマージした変更は、各データセットの次の Apply から使われる。各リポで固定を上げる作業は無い。
+
+- Apply は、呼んだワークフローと同じコミットの dataset-shared に `shared` を切り替えてからビルドする（ジョブの OIDC トークンの `job_workflow_sha`）。submodule が指すコミットは使わない
+- 各バージョンのメッセージに、使った dataset-shared のコミットを `Shared: <SHA>` で記録する（`scripts/built_from.py`）。説明だけの push でも、前回のビルドと dataset-shared のコミットが違えばビルドする
+- main への変更は全データセットのシークレットと書き込み権を持って動くので、main はブランチ保護で PR とコードオーナー（`.github/CODEOWNERS`）のレビューを必須にしている。PR の Test は、そのコミットで dataset-imi と dataset-schemaorg を手元の fdl リポジトリに 2 回ビルドする（Queria には書かない）
+
+手元でビルドするときは、submodule を main に合わせてから流す。submodule のコミットを上げてコミットする必要はない。
 
 ```bash
-shared/scripts/pin-shared.sh
-git commit -m "chore: dataset-shared を更新する"
+git submodule update --init --remote shared
+scripts/build.sh
 ```
-
-`shared` が `pin-shared.sh` を含まない古いコミットを指しているリポでは、初回だけ `git -C shared fetch origin && git -C shared checkout origin/main` で submodule を先に更新してから実行する。
 
 ## Queria のトークン（fdl のデータセット）
 
-GitHub Actions のジョブに `id-token: write` があると、`scripts/build-fdl.sh` はリポジトリのシークレットを使わず、ジョブの OIDC トークンを Queria で 1 時間の API トークンに交換して書きます（`scripts/queria_token.py`）。fdl は credential helper として、`storage_key.py` は鍵を頼む前に、トークンが要るたびにこれを呼びます。残りが 10 分を切ると交換し直すので、1 時間を超えるビルドも止まりません。交換できるのは Queria に登録したリポジトリ・ワークフロー・ブランチ（dataset-shared の Apply を呼ぶ、各リポの main のジョブ）だけです。ワークフローを SHA で固定した呼び出しも、パスが同じなら交換できます。どの SHA を動かすかは各リポの main が決めるので、固定を上げる PR では dataset-shared の差分を確認します。
+GitHub Actions のジョブに `id-token: write` があると、`scripts/build-fdl.sh` はリポジトリのシークレットを使わず、ジョブの OIDC トークンを Queria で 1 時間の API トークンに交換して書きます（`scripts/queria_token.py`）。fdl は credential helper として、`storage_key.py` は鍵を頼む前に、トークンが要るたびにこれを呼びます。残りが 10 分を切ると交換し直すので、1 時間を超えるビルドも止まりません。交換できるのは Queria に登録したリポジトリ・ワークフロー・ブランチ（dataset-shared の main の Apply を呼ぶ、各リポの main のジョブ）だけです。
 
 呼び出し側の Apply に `permissions` を書きます。Queria のトークンはシークレットで渡しません。Queria が交換を断ったときは、ビルドが止まります。
 
@@ -134,12 +138,10 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: queria-io/dataset-shared/.github/workflows/sync.yml@<shared の SHA>
+    uses: queria-io/dataset-shared/.github/workflows/sync.yml@main
     secrets:
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 ```
-
-Queria の照合は、SHA で固定したワークフローもパスが登録と同じなら通す。
 
 `secrets: inherit` は使わない。inherit はリポジトリのシークレットを全部渡すので、使うものだけを明示的に渡す。取得元の API キー（`ESTAT_API_KEY`・`REINFOLIB_API_KEY`・`EDINET_API_KEY`・`GBIZINFO_API_TOKEN`・`HOUJIN_BANGOU_APP_ID`）は、使うデータセットだけが追加する。
 
@@ -148,8 +150,7 @@ Queria の照合は、SHA で固定したワークフローもパスが登録と
 ## 共通ワークフロー
 
 `.github/workflows/sync.yml` を各データセットリポが
-`uses: queria-io/dataset-shared/.github/workflows/sync.yml@<SHA>` で呼ぶ。SHA は submodule と同じコミットで、
-`shared/scripts/pin-shared.sh` が両方を上げる。
+`uses: queria-io/dataset-shared/.github/workflows/sync.yml@main` で呼ぶ。
 
 Apply を打ち切るまでの分数は `timeout_minutes` で決まる。既定は 90 分で、数えるのは
 job が走り出してからの時間（`concurrency` の待ち時間は入らない）。これを超える
@@ -158,7 +159,7 @@ job が走り出してからの時間（`concurrency` の待ち時間は入ら�
 ```yaml
 jobs:
   sync:
-    uses: queria-io/dataset-shared/.github/workflows/sync.yml@<shared の SHA>
+    uses: queria-io/dataset-shared/.github/workflows/sync.yml@main
     with:
       timeout_minutes: 240
 ```
@@ -191,7 +192,7 @@ fdl で上げるデータセットは、新しいデータファイルを手元�
 ```yaml
 jobs:
   sync:
-    uses: queria-io/dataset-shared/.github/workflows/sync.yml@<shared の SHA>
+    uses: queria-io/dataset-shared/.github/workflows/sync.yml@main
     with:
       mode: incremental
 ```
@@ -217,7 +218,7 @@ jobs:
   local-run:
     needs: check
     if: needs.check.outputs.reason != ''
-    uses: queria-io/dataset-shared/.github/workflows/local-run.yml@<shared の SHA>
+    uses: queria-io/dataset-shared/.github/workflows/local-run.yml@main
     with:
       reason: ${{ needs.check.outputs.reason }}
     secrets:
