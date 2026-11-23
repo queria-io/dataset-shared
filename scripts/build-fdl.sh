@@ -250,7 +250,7 @@ if [ "$status" = 2 ] && [ -n "$built" ]; then
     run_load || status=$?
 fi
 [ "$status" = 0 ] || exit "$status"
-# The description of earlier versions, in the _meta schema, is replaced by _tabledoc.
+# The description of earlier versions, in the _meta or _queria schema, is replaced by _tabledoc.
 uv run python - "$work" <<'PY'
 import sys
 
@@ -259,9 +259,12 @@ import duckdb
 con = duckdb.connect()
 con.execute("INSTALL ducklake; LOAD ducklake; INSTALL sqlite; LOAD sqlite;")
 con.execute(f"ATTACH 'ducklake:{sys.argv[1]}' AS lake (META_TYPE 'sqlite', DATA_INLINING_ROW_LIMIT 0)")
-if con.execute("SELECT 1 FROM duckdb_schemas() WHERE database_name = 'lake' AND schema_name = '_meta'").fetchone():
-    con.execute("DROP SCHEMA lake._meta CASCADE")
-    print("dropped the _meta schema of earlier versions")
+for schema in ("_meta", "_queria"):
+    if con.execute(
+        "SELECT 1 FROM duckdb_schemas() WHERE database_name = 'lake' AND schema_name = ?", [schema]
+    ).fetchone():
+        con.execute(f"DROP SCHEMA lake.{schema} CASCADE")
+        print(f"dropped the {schema} schema of earlier versions")
 PY
 
 author="${FDL_AUTHOR:-$(git config user.name || echo build)}"
