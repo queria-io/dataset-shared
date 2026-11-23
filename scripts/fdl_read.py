@@ -19,15 +19,13 @@ A dataset's own Python that reads the published catalog (to skip what is
 published already, say) runs ``fdl_read.statements()`` on its DuckDB connection
 before it attaches the working catalog.
 
-Without FDL_WORKING (a PR check builds into a local file) or without a token,
-it does nothing.
+Without FDL_WORKING and FDL_REMOTE (a PR check builds into a local file) or
+without a token, it does nothing.
 """
 
 from __future__ import annotations
 
-import json
 import os
-from pathlib import Path
 from typing import Callable
 
 from dbt.adapters.duckdb.plugins import BasePlugin
@@ -37,15 +35,8 @@ def _quoted(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
-def setup(working: str | None, token_for: Callable[[str], str | None]) -> list[str]:
-    """The statements that let DuckDB read the repository ``working`` was checked out from."""
-    if not working:
-        return []
-    state = Path(working + ".fdl") / "state.json"
-    if not state.exists():
-        # Where fdl kept it before it put its files in one folder.
-        state = Path(working + ".fdl.json")
-    remote = json.loads(state.read_text()).get("remote") if state.exists() else None
+def setup(remote: str | None, token_for: Callable[[str], str | None]) -> list[str]:
+    """The statements that let DuckDB read the repository ``remote``."""
     if not remote or not remote.startswith("https://"):
         return []
     token = token_for(remote)
@@ -61,9 +52,10 @@ def _token(remote: str) -> str | None:
 
 
 def statements() -> list[str]:
-    """The statements for this build's working catalog (FDL_WORKING). A dataset's own
-    Python that reads the published catalog outside dbt runs them on its connection."""
-    return setup(os.environ.get("FDL_WORKING"), _token)
+    """The statements for this build's working catalog (FDL_WORKING), cloned from
+    FDL_REMOTE (build-fdl.sh sets both). A dataset's own Python that reads the
+    published catalog outside dbt runs them on its connection."""
+    return setup(os.environ.get("FDL_REMOTE") if os.environ.get("FDL_WORKING") else None, _token)
 
 
 class Plugin(BasePlugin):

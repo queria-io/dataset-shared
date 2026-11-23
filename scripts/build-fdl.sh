@@ -99,33 +99,17 @@ if [ "${FDL_DIRECT:-0}" = 1 ] \
     storage=(--storage "$FDL_STORAGE")
 fi
 
-# Where the build writes new data files. Over HTTP clone keeps them in a local
-# folder (recorded beside the working catalog) until commit uploads them; with
-# --storage they go to the repository's data_dir in its storage; otherwise they go
-# where the catalog says. The catalog's own data_path is where readers find the
-# files (https://...), which DuckDB cannot write to.
+# What fdl status --json says of a working catalog: $2 of $1.
+fdl_status() {
+    uv run fdl status "$1" --json | uv run python -c 'import json, sys; print(json.load(sys.stdin)[sys.argv[1]] or "")' "$2"
+}
+
+# Where the build writes new data files (fdl status's data_path). Over HTTP clone
+# keeps them in a local folder until commit uploads them; with --storage they go
+# to the repository's data_dir in its storage; otherwise they go where the catalog
+# says.
 data_path() {
-    uv run python - "$work" <<'PY'
-import json, sqlite3, sys
-from pathlib import Path
-
-work = Path(sys.argv[1])
-state_file = work.with_name(work.name + ".fdl") / "state.json"
-if not state_file.exists():
-    # Where fdl kept it before it put its files in one folder.
-    state_file = work.with_name(work.name + ".fdl.json")
-state = json.loads(state_file.read_text())
-if "data" in state:
-    print(Path(state["data"]).resolve().as_posix() + "/")
-elif "storage" in state:
-    from fdl import repo
-    from fdl.stores import open_store
-
-    print(repo.storage_data_path(state["storage"], repo.read_config(open_store(state["remote"]))))
-else:
-    con = sqlite3.connect(work)
-    print(con.execute("SELECT value FROM ducklake_metadata WHERE key = 'data_path'").fetchone()[0])
-PY
+    fdl_status "$work" data_path
 }
 
 # Every build starts from the last build, on the apply branch. Before the first,
@@ -152,6 +136,8 @@ if [ -n "${storage[*]+x}" ] && [ "$FDL_DATA_PATH" != "${FDL_STORAGE_DATA:-}" ]; 
 fi
 export FDL_WORKING="$PWD/$work"
 export FDL_DATA_PATH
+# The repository the working catalog came from: fdl_read.py sends the token to it.
+export FDL_REMOTE="$remote"
 # Reads of other public datasets go by this name (profiles.yml's custom_user_agent),
 # so data.queria.io does not count the build among its users.
 QUERIA_USER_AGENT="${QUERIA_USER_AGENT:-queria-build/fdl-$(uv run python -c 'import importlib.metadata as m; print(m.version("fdl-cli"))')}"
@@ -279,8 +265,7 @@ main=".fdl/main.sqlite"
 decision="$(uv run python "$(dirname "$0")/sync_branch.py" "$remote")"
 if [ "$decision" != new ]; then
     uv run fdl clone "$remote" "$main" >/dev/null
-    # fdl keeps the state in <working>.fdl/state.json (<working>.fdl.json before it put its files in one folder).
-    base="$(uv run python -c 'import json, os, sys; print(json.load(open(next(filter(os.path.exists, sys.argv[1:]))))["base"])' "$main.fdl/state.json" "$main.fdl.json")"
+    base="$(fdl_status "$main" base)"
     decision="$(uv run python "$(dirname "$0")/sync_branch.py" "$remote" "$base")"
 fi
 request=
