@@ -56,9 +56,12 @@ work=".fdl/work.sqlite"
 # The models follow the layers and the idempotency rules (README.md), or nothing is built.
 python3 "$(dirname "$0")/check_models.py" models
 
-# fdl is in beta: build with the latest, as the Apply workflow does, so that a build on this
-# machine makes and profiles the version like the Apply workflow even when uv.lock is old.
-uv lock --quiet --upgrade-package fdl-cli
+# The fdl-cli and tabledoc every dataset builds with. A new release reaches the
+# datasets only when these are raised here, so a build on this machine and the Sync
+# workflow make and profile a version with the same ones, whatever uv.lock holds.
+FDL_CLI_VERSION=0.35.1
+TABLEDOC_VERSION=0.8.0
+uv lock --quiet --upgrade-package "fdl-cli==$FDL_CLI_VERSION"
 
 # In a GitHub Actions job that may ask for an OIDC token (`permissions: id-token:
 # write`), fdl and the storage key take an hour's token from Queria whenever they
@@ -198,12 +201,11 @@ fi
 # those documents, and the files of FDL_ASSETS linked in. From dbt's
 # target/manifest.json it adds each model's SQL and dependencies; when the build
 # was skipped, they stay as apply's _tabledoc holds them. The dataset's own
-# environment may not hold tabledoc, so it runs as a tool: the newest, and at
-# least the first that reads hidden, url and entity as a name.
+# environment may not hold tabledoc, so it runs as a tool, at TABLEDOC_VERSION.
 # --isolated: uvx otherwise runs a tabledoc installed with `uv tool install` whenever
 # it meets the bound, however old (uvx ignores --upgrade-package for it).
 # --refresh-package: uvx otherwise resolves against the index it cached.
-tabledoc=(uvx --isolated --refresh-package tabledoc --from "tabledoc>=0.8.0" tabledoc)
+tabledoc=(uvx --isolated --refresh-package tabledoc --from "tabledoc==$TABLEDOC_VERSION" tabledoc)
 assets="$(mktemp -d)"
 load=(--quiet --profiles "${DBT_PROFILES_DIR:-.}/profiles.yml" --out "$assets")
 [ "${FDL_UNDESCRIBED:-}" = hidden ] && load+=(--hide-undescribed)
