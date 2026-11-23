@@ -40,6 +40,11 @@ class SetupTest(unittest.TestCase):
         found = con.execute("SELECT type, scope FROM duckdb_secrets() WHERE name = 'fdl_read'").fetchall()
         self.assertEqual(found, [("http", [REMOTE])])
 
+    def test_reads_the_state_an_earlier_fdl_kept(self):
+        path = Path(tempfile.mkdtemp()) / "work.sqlite"
+        path.with_name(path.name + ".fdl.json").write_text(json.dumps({"remote": REMOTE}))
+        self.assertEqual(len(fdl_read.setup(str(path), lambda remote: "token")), 1)
+
     def test_nothing_without_working_or_token(self):
         self.assertEqual(fdl_read.setup(None, lambda remote: "token"), [])
         self.assertEqual(fdl_read.setup(working(None), lambda remote: "token"), [])
