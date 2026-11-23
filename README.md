@@ -16,7 +16,7 @@ git submodule add https://github.com/queria-io/dataset-shared.git shared
 scripts/build.sh
 ```
 
-公開先は選ばない。データセットは `queria.yml` の `name`、アカウントはトークンが決める（手元では `FDL_TOKEN` か `queria login`、GitHub Actions では OIDC で取るトークン）。
+公開先は選ばない。データセットは `tabledoc.yml` の `name`、アカウントはトークンが決める（手元では `FDL_TOKEN` か `queria login`、GitHub Actions では OIDC で取るトークン）。
 公開せずに 1 回転させたいときは queria-cli の `tools/rotate.py` をスタンドインに向けて回す
 （fdl の `local` ターゲットに相当するものは無い。書き込みは Queria が発行する
 一時認証情報を必ず経由する）。
@@ -51,7 +51,7 @@ sed 's/DATASET_NAME/<name>/g' shared/templates/profiles.yml > profiles.yml
 
 ## 提供スクリプト
 
-- `scripts/build-fdl.sh`: `refs/heads/apply` ブランチで `fdl clone` → ビルド → `fdl commit` → `fdl push` を回し、apply を main に取り込む。apply ブランチにはこのコードから作ったバージョンだけが積まれる。main に前回のビルドより後の人の変更（`fdl clone` と `fdl push`、apply 以外からの変更リクエストのマージ）が無ければ `fdl merge` して main を進め、あれば apply からの変更リクエストを作って人が確認するまで main を変えない（`scripts/sync_branch.py`）。merge が衝突したときや main に push できないとき（承認必須のデータセット）も変更リクエストにする。apply は main を取り込まないので、main で行や説明を変えると以後のビルドが毎回変更リクエストになる。説明はこのリポジトリのファイルで変更し、データの誤りは元データの公開元に報告する。commit の前に `tabledoc load`（[tabledoc](https://github.com/queria-io/tabledoc)）が説明を検査し、作業カタログの `_queria` スキーマのテーブル（普通の DuckLake のテーブル）に書き直す。説明と README.md・テーブルのガイドなどのファイルは、データと同じバージョンに入る。主キー・asset 列・ビューが読む別のデータセットと、`_queria` のテーブルや `FDL_UNDESCRIBED=unlisted` で説明の無いテーブルにプロファイルを作らないことは、tabledoc が `fdl declare` で宣言する。それより前のバージョンの説明を持つ `_meta` スキーマは、load の後に削除する。あわせて `fdl commit --assets` に渡すファイル（README.md・テーブルのガイド・ドキュメントと、`FDL_ASSETS` のファイルへのリンク）を `.fdl/` の外の一時フォルダに書き出す。`.fdl/` の下には fdl だけが書く。ビルドが dbt の `target/manifest.json` を書いたときは、モデルの SQL（`sql`）と依存先（`depends_on`）、profiles.yml が読むだけで ATTACH する公開データセットのエイリアス（`catalogs`）も tabledoc が入れる。記述に書いた値が優先される。main への push で、前回のビルドから説明のファイル（tabledoc.yml・モデルの隣の `*.tabledoc.yml`・Markdown・docs/、まだ移していないリポジトリでは queria.yml・dataset.yml・*.table.yml）と `.github/`（ワークフローは打ち切り時間の変更だけ）しか変わっていないときは、ビルドを実行せず、apply のデータのまま新しい説明でバージョンを作る（SQL と依存先は apply の先頭の `_queria` から引き継ぐ。apply の先頭が `_queria` を持たないバージョン（それより前の `_meta` だけを持つバージョンを含む）のときと、そのファイルを読めないときはビルドする）。説明も変わっていなければバージョンを作らない。`shared` の submodule を上げたときはビルドする。どのコミットのコードでデータを作ったかは、各バージョンのメッセージの `Built-From: <SHA>` に記録する（`scripts/built_from.py`）。スケジュールと手動の実行は常にビルドする
+- `scripts/build-fdl.sh`: `refs/heads/apply` ブランチで `fdl clone` → ビルド → `fdl commit` → `fdl push` を回し、apply を main に取り込む。apply ブランチにはこのコードから作ったバージョンだけが積まれる。main に前回のビルドより後の人の変更（`fdl clone` と `fdl push`、apply 以外からの変更リクエストのマージ）が無ければ `fdl merge` して main を進め、あれば apply からの変更リクエストを作って人が確認するまで main を変えない（`scripts/sync_branch.py`）。merge が衝突したときや main に push できないとき（承認必須のデータセット）も変更リクエストにする。apply は main を取り込まないので、main で行や説明を変えると以後のビルドが毎回変更リクエストになる。説明はこのリポジトリのファイルで変更し、データの誤りは元データの公開元に報告する。commit の前に `tabledoc load`（[tabledoc](https://github.com/queria-io/tabledoc)）が説明を検査し、作業カタログの `_tabledoc` スキーマのテーブル（普通の DuckLake のテーブル）に書き直す。説明と README.md・テーブルのガイドなどのファイルは、データと同じバージョンに入る。主キー・asset 列・ビューが読む別のデータセットと、`_tabledoc` のテーブルや `FDL_UNDESCRIBED=unlisted` で説明の無いテーブルにプロファイルを作らないことは、tabledoc が `fdl declare` で宣言する。それより前のバージョンの説明を持つ `_meta` スキーマは、load の後に削除する。あわせて `fdl commit --assets` に渡すファイル（README.md・テーブルのガイド・ドキュメントと、`FDL_ASSETS` のファイルへのリンク）を `.fdl/` の外の一時フォルダに書き出す。`.fdl/` の下には fdl だけが書く。ビルドが dbt の `target/manifest.json` を書いたときは、モデルの SQL（`sql`）と依存先（`depends_on`）、profiles.yml が読むだけで ATTACH する公開データセットのエイリアス（`catalogs`）も tabledoc が入れる。記述に書いた値が優先される。main への push で、前回のビルドから説明のファイル（tabledoc.yml・モデルの隣の `*.tabledoc.yml`・Markdown・docs/）と `.github/`（ワークフローは打ち切り時間の変更だけ）しか変わっていないときは、ビルドを実行せず、apply のデータのまま新しい説明でバージョンを作る（SQL と依存先は apply の先頭の `_tabledoc` から引き継ぐ。apply の先頭が `_tabledoc` を持たないバージョン（それより前の `_queria` や `_meta` だけを持つバージョンを含む）のときと、そのファイルを読めないときはビルドする）。説明も変わっていなければバージョンを作らない。`shared` の submodule を上げたときはビルドする。どのコミットのコードでデータを作ったかは、各バージョンのメッセージの `Built-From: <SHA>` に記録する（`scripts/built_from.py`）。スケジュールと手動の実行は常にビルドする
 
 ## 取得の共通部品
 
@@ -241,8 +241,8 @@ jobs:
 他のデータセットの表を読むときは、その表を raw とみなし、stg で読む。
 
 出荷されるのは、ビルドがカタログに書いた表すべて。fdl はカタログの表を
-全部バージョンに入れる。Queria の画面と検索に出さない表は、テーブルの Markdown のフロントマターに
-`published: false` と書く。層はモデルを読む側のための区切りで、
+全部バージョンに入れる。Queria の画面と検索に出さない表は、テーブルの `<model>.tabledoc.yml` に
+`listed: false` と書く。層はモデルを読む側のための区切りで、
 ディレクトリでは出荷も掲載も決まらない。
 
 用途別の集計はデータセットに入れない。ショーケース用のデモデータセットへ寄せる。
@@ -326,7 +326,7 @@ Excel・CSV・PDF・ZIP など、配布元がファイルで配るデータは�
 掲載ページから外れる・同じ URL で差し替わる）だけを FDL のアセットとして入れる。再配布を認めていない配布元のファイルは入れない。
 
 - アセットにするファイルは `data/assets/<sha256>.<拡張子>` に置く。アップロードするときのメディアタイプは拡張子から決まる
-- アセットを指す列に、テーブルの Markdown のフロントマターで `asset: true` を付ける。付けないと `--assets` を渡しても何もアップロードされない。
+- アセットを指す列に、テーブルの `<model>.tabledoc.yml` で `asset: true` を付ける。付けないと `--assets` を渡しても何もアップロードされない。
   `fdl push` は、`asset: true` の列にリポジトリにも手元にも無い sha256 があると止まる。
   `source_file` の一部のファイルだけをアセットにするときは `sha256` 列には付けず、アセットにしたファイルの sha256 だけを入れて
   ほかは NULL にした列（`asset_sha256`）に付ける
@@ -364,10 +364,5 @@ docs.queria.io のクックブックに取り込まれる。取り込みはカ�
 1 つのテーブルの説明を 1 つのファイルにして、どのテーブルの説明かをファイル名で分かるようにするため。
 dbt の yml にはテストなどビルドに要るものだけを書き、`description` と `meta` は書かない（`scripts/check_models.py` が止める）。
 dbt はモデルのフォルダの yml をすべて構文解析するので、`.dbtignore` に `*.tabledoc.yml` を書く（無いと `tabledoc load` が止める）。
-配布されるのは `tabledoc load` がカタログの `_queria` スキーマに書くテーブルで、その入力はこれらのファイルだけ。
+配布されるのは `tabledoc load` がカタログの `_tabledoc` スキーマに書くテーブルで、その入力はこれらのファイルだけ。
 ビルドと保守の手順は README.md ではなく CONTRIBUTING.md に書く（README.md はデータセットの概要として Queria に表示される）。
-
-**`ai_context` は廃止する。** 書いても読む先が無いので埋める必要はない。既に書いてある
-リポジトリは、`instructions` を各階層の説明へ、`synonyms` を `keywords` へ畳んで
-外す。畳み終わってから `queria` の `DATASET_KEYS` とスキーマからも落とす。
-

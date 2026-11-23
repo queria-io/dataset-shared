@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build a dataset with fdl: clone the apply branch, build on it, push a new
 # version to it, and bring it into main. Called from each dataset's scripts/build.sh.
-# `tabledoc load` checks the description and writes it into the catalog's _queria schema
+# `tabledoc load` checks the description and writes it into the catalog's _tabledoc schema
 # between the build and the commit, so a failed check makes no version.
 #
 # Usage:
@@ -11,7 +11,7 @@
 # The build reads and writes the working catalog fdl checks out: FDL_WORKING is
 # its path and FDL_DATA_PATH the folder new data files go to (profiles.yml
 # attaches both). tabledoc load writes the description from tabledoc.yml and the
-# files beside it into its _queria schema, fdl commit freezes it into a
+# files beside it into its _tabledoc schema, fdl commit freezes it into a
 # version, and fdl push uploads it to refs/heads/apply. Only fdl writes under .fdl/.
 #
 # refs/heads/apply holds only versions built from this code, and this code is where
@@ -38,18 +38,11 @@ if [ "$#" -eq 0 ]; then
     set -- python main.py
 fi
 
-# tabledoc.yml, or queria.yml in a repository that still keeps the older file: the
-# files tabledoc load reads. It does not read dataset.yml, so a repository with only
-# that stops here instead of after the build.
-described_by=
-for file in tabledoc.yml queria.yml; do
-    if [ -f "$file" ]; then
-        described_by="$file"
-        break
-    fi
-done
-if [ -z "$described_by" ]; then
-    echo "no tabledoc.yml: move the description in dataset.yml to tabledoc.yml" >&2
+# tabledoc.yml: the file tabledoc load reads the dataset from. A repository without it
+# (one that still keeps queria.yml or dataset.yml) stops here instead of after the build.
+described_by=tabledoc.yml
+if [ ! -f "$described_by" ]; then
+    echo "no tabledoc.yml: move the description in queria.yml or dataset.yml to tabledoc.yml" >&2
     exit 2
 fi
 name="$(sed -n 's/^name: *//p' "$described_by" 2>/dev/null | head -n 1 || true)"
@@ -169,8 +162,8 @@ export QUERIA_USER_AGENT
 # the data apply holds, without running the dataset's code: the data would come out the same (scripts/built_from.py).
 # With the description unchanged too, fdl commit makes no version. Each version
 # records the commit whose code made its data as a trailer of its message. The
-# SQL and dependencies of the models come from the _queria schema apply holds, so a
-# version without it (one from before it, with the earlier _meta schema) is built.
+# SQL and dependencies of the models come from the _tabledoc schema apply holds, so a
+# version without it (one from before it, with the earlier _queria or _meta schema) is built.
 built=
 if [ "${GITHUB_EVENT_NAME:-}" = push ]; then
     built="$(uv run python "$(dirname "$0")/built_from.py" check "$remote")" || built=
@@ -198,7 +191,7 @@ else
     build "$@"
 fi
 
-# tabledoc checks the description and writes it as the _queria tables of the working
+# tabledoc checks the description and writes it as the _tabledoc tables of the working
 # catalog: the dataset, its tables and columns, and the files (README.md, the
 # tables' guides and the documents). It declares with fdl declare what fdl reads:
 # the primary keys, the asset columns, the other datasets the views read
@@ -210,15 +203,15 @@ fi
 # Into a folder outside .fdl/ it puts the files fdl commit --assets uploads:
 # those documents, and the files of FDL_ASSETS linked in. From dbt's
 # target/manifest.json it adds each model's SQL and dependencies; when the build
-# was skipped, they stay as apply's _queria holds them. The dataset's own
+# was skipped, they stay as apply's _tabledoc holds them. The dataset's own
 # environment may not hold tabledoc, so it runs as a tool: the newest, and at
-# least the first that reads <model>.tabledoc.yml beside each model's SQL.
+# least the first that writes the _tabledoc schema.
 # --isolated: uvx otherwise runs a tabledoc installed with `uv tool install` whenever
 # it meets the bound, however old (uvx ignores --upgrade-package for it).
 # --refresh-package: uvx otherwise resolves against the index it cached.
-tabledoc=(uvx --isolated --refresh-package tabledoc --from "tabledoc>=0.5.0" tabledoc)
+tabledoc=(uvx --isolated --refresh-package tabledoc --from "tabledoc>=0.6.0" tabledoc)
 assets="$(mktemp -d)"
-load=(--quiet --schema _queria --profiles "${DBT_PROFILES_DIR:-.}/profiles.yml" --out "$assets")
+load=(--quiet --profiles "${DBT_PROFILES_DIR:-.}/profiles.yml" --out "$assets")
 [ "${FDL_UNDESCRIBED:-}" = unlisted ] && load+=(--unlisted)
 [ -n "${FDL_ASSETS:-}" ] && load+=(--assets "$FDL_ASSETS")
 fdl_token() {
@@ -246,18 +239,18 @@ run_load() {
 }
 status=0
 run_load || status=$?
-# 2: the catalog could not be read or written, such as apply's _queria when its files
+# 2: the catalog could not be read or written, such as apply's _tabledoc when its files
 # cannot be read here. Without the build there is nothing else to take the SQL
 # from, so build. 1 is the description's own error, which a build does not fix.
 if [ "$status" = 2 ] && [ -n "$built" ]; then
-    echo "could not keep the SQL from apply's _queria: running the build" >&2
+    echo "could not keep the SQL from apply's _tabledoc: running the build" >&2
     built=
     build "$@"
     status=0
     run_load || status=$?
 fi
 [ "$status" = 0 ] || exit "$status"
-# The description of earlier versions, in the _meta schema, is replaced by _queria.
+# The description of earlier versions, in the _meta schema, is replaced by _tabledoc.
 uv run python - "$work" <<'PY'
 import sys
 
