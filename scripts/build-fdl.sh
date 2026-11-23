@@ -28,7 +28,7 @@
 #   FDL_MESSAGE  the version's message (default: build, or "Update the description" when the build is skipped)
 #   FDL_AUTHOR   who made it (default: git's user.name)
 #   FDL_ASSETS   a folder with the files the asset columns point at (linked into the folder fdl commit --assets takes)
-#   FDL_UNDESCRIBED  unlisted: tables with no description (no table Markdown file) are not listed on Queria
+#   FDL_UNDESCRIBED  hidden: tables with no description (no table file) are hidden from lists and search on Queria
 #   FDL_DIRECT   1 to write new data files straight to storage when Queria gives a key
 #                to them, instead of keeping them in a local folder until the commit (default: 0)
 #   QUERIA_USER_AGENT  the name the build reads data.queria.io under (default: queria-build/fdl-<version>)
@@ -199,14 +199,14 @@ fi
 # target/manifest.json it adds each model's SQL and dependencies; when the build
 # was skipped, they stay as apply's _tabledoc holds them. The dataset's own
 # environment may not hold tabledoc, so it runs as a tool: the newest, and at
-# least the first that writes the _tabledoc schema.
+# least the first that reads hidden, url and entity as a name.
 # --isolated: uvx otherwise runs a tabledoc installed with `uv tool install` whenever
 # it meets the bound, however old (uvx ignores --upgrade-package for it).
 # --refresh-package: uvx otherwise resolves against the index it cached.
-tabledoc=(uvx --isolated --refresh-package tabledoc --from "tabledoc>=0.6.0" tabledoc)
+tabledoc=(uvx --isolated --refresh-package tabledoc --from "tabledoc>=0.8.0" tabledoc)
 assets="$(mktemp -d)"
 load=(--quiet --profiles "${DBT_PROFILES_DIR:-.}/profiles.yml" --out "$assets")
-[ "${FDL_UNDESCRIBED:-}" = unlisted ] && load+=(--unlisted)
+[ "${FDL_UNDESCRIBED:-}" = hidden ] && load+=(--hide-undescribed)
 [ -n "${FDL_ASSETS:-}" ] && load+=(--assets "$FDL_ASSETS")
 fdl_token() {
     uv run python "$(dirname "$0")/queria_token.py" 2>/dev/null && return 0
