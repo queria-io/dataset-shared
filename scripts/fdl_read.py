@@ -41,7 +41,10 @@ def setup(working: str | None, token_for: Callable[[str], str | None]) -> list[s
     """The statements that let DuckDB read the repository ``working`` was checked out from."""
     if not working:
         return []
-    state = Path(working + ".fdl.json")
+    state = Path(working + ".fdl") / "state.json"
+    if not state.exists():
+        # Where fdl kept it before it put its files in one folder.
+        state = Path(working + ".fdl.json")
     remote = json.loads(state.read_text()).get("remote") if state.exists() else None
     if not remote or not remote.startswith("https://"):
         return []
