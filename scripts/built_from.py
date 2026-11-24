@@ -35,9 +35,9 @@ DESCRIPTION_FILES = ("tabledoc.yml",)
 DESCRIPTION_PATTERNS = ("*.md", "*.tabledoc.yml")
 DESCRIPTION_DIR = "docs/"
 #: The GitHub settings. A workflow also passes the build its inputs (secrets, mode,
-#: the runner, the pinned shared workflow), so it keeps the data only when its jobs
-#: changed nothing but the time limit. The shared submodule is outside: its scripts
-#: make the data.
+#: the runner, the shared workflow it calls), so it keeps the data only when its jobs
+#: changed nothing but the time limit. dataset-shared is not in the repository (the
+#: Apply checks it out into shared/), so its changes do not show up here.
 CI_DIR = ".github/"
 WORKFLOWS_DIR = ".github/workflows/"
 TIME_LIMITS = ("timeout_minutes", "timeout-minutes")
