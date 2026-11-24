@@ -2,20 +2,18 @@
 repository changed nothing but the description and the GitHub Actions settings.
 
 Usage:
-  python built_from.py trailer [<sha>]       print the trailers that record this checkout and dataset-shared
-                                            (in GitHub Actions only); Built-From is <sha> when given
+  python built_from.py trailer               print the trailer that records this checkout (in GitHub Actions only)
   python built_from.py check <remote>        when only the description changed since apply was last built,
                                             print the commit it was built from
                                             (also when only .github/ changed besides)
 
 Each version the build makes records in its message the commit whose code made its
-data (`Built-From: <sha>`, a trailer as in Git) and the commit of dataset-shared it
-was built with (`Shared: <sha>`). A version made from the description alone keeps
-the commit of the build before it, so the head of apply always tells which code its
-data came from. When the repository changed only description files and .github/
-since that commit, and dataset-shared is the commit recorded, the data would come out
-the same: the build commits the new description on the data it already has (or
-nothing, when the description is the same).
+data (`Built-From: <sha>`, a trailer as in Git). A version made from the description
+alone keeps the commit of the build before it, so the head of apply always tells
+which code its data came from. When the repository changed only description files
+and .github/ since that commit, the data would come out the same: the build commits
+the new description on the data it already has (or nothing, when the description is
+the same).
 """
 
 from __future__ import annotations
@@ -25,16 +23,10 @@ import re
 import subprocess
 import sys
 from fnmatch import fnmatchcase
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 
 TRAILER = "Built-From"
 _TRAILER = re.compile(rf"^{TRAILER}: ([0-9a-f]{{40}})$", re.MULTILINE)
-#: The commit of dataset-shared a version was built with. The callers run dataset-shared's
-#: main, so the dataset's own commit does not tell it.
-SHARED_TRAILER = "Shared"
-_SHARED_TRAILER = re.compile(rf"^{SHARED_TRAILER}: ([0-9a-f]{{40}})$", re.MULTILINE)
-#: This checkout of dataset-shared (the dataset's shared submodule).
-SHARED_DIR = Path(__file__).resolve().parents[1]
 
 #: The file tabledoc reads the dataset's description from. Anything else may change the data.
 DESCRIPTION_FILES = ("tabledoc.yml",)
@@ -109,12 +101,6 @@ def built_from(message: str) -> str | None:
     return found[-1] if found else None
 
 
-def built_with(message: str) -> str | None:
-    """The commit of dataset-shared a version's message records, if any."""
-    found = _SHARED_TRAILER.findall(message)
-    return found[-1] if found else None
-
-
 def _git(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["git", *args], capture_output=True, text=True)
 
@@ -127,18 +113,6 @@ def checkout_commit() -> str | None:
     uv.lock (it upgrades queria and fdl-cli), which is not the code it builds.
     """
     sha = os.environ.get("GITHUB_SHA", "") if os.environ.get("GITHUB_ACTIONS") else ""
-    return sha if re.fullmatch(r"[0-9a-f]{40}", sha) else None
-
-
-def shared_commit() -> str | None:
-    """The commit of dataset-shared a GitHub Actions run builds with.
-
-    Only a run records it, as with checkout_commit: on someone's machine the
-    submodule may hold changes that are not in any commit.
-    """
-    if not os.environ.get("GITHUB_ACTIONS"):
-        return None
-    sha = _git("-C", str(SHARED_DIR), "rev-parse", "HEAD").stdout.strip()
     return sha if re.fullmatch(r"[0-9a-f]{40}", sha) else None
 
 
@@ -166,8 +140,6 @@ def description_only(store) -> str | None:
     A version with no _tabledoc schema (one from before it, even with the earlier
     _queria or _meta) builds, as tabledoc load cannot keep its models' SQL. A push
     that changed nothing (an empty commit pushed to build again) builds as before.
-    A version built with another commit of dataset-shared, or that records none, builds:
-    dataset-shared's scripts make the data too.
     """
     from fdl import diff as diffs
     from fdl import repo
@@ -175,10 +147,6 @@ def description_only(store) -> str | None:
     head = repo.head(store, "refs/heads/apply")
     sha = head and built_from(head.message)
     if not sha:
-        return None
-    shared = shared_commit()
-    if shared is None or built_with(head.message) != shared:
-        print("apply was built with another commit of dataset-shared: building", file=sys.stderr)
         return None
     changed = changed_since(sha)
     checkout = checkout_commit()
@@ -192,13 +160,10 @@ def description_only(store) -> str | None:
 
 
 def main(argv: list[str]) -> int:
-    if argv[:1] == ["trailer"] and len(argv) <= 2:
-        sha = argv[1] if len(argv) == 2 else checkout_commit()
+    if argv[:1] == ["trailer"] and len(argv) == 1:
+        sha = checkout_commit()
         if sha:
             print(f"{TRAILER}: {sha}")
-        shared = shared_commit()
-        if shared:
-            print(f"{SHARED_TRAILER}: {shared}")
         return 0
     if argv[:1] == ["check"] and len(argv) == 2:
         from fdl.stores import open_store
