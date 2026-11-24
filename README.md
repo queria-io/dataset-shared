@@ -2,18 +2,26 @@
 
 Queria データセットリポジトリの共通スクリプト。
 
-各データセットリポが submodule として参照し、ビルド・デプロイの共通処理を提供する。
+各データセットリポが `shared/` に置いて使い、ビルド・デプロイの共通処理を提供する。
 
 ## 使い方
 
 各データセットリポで:
 
 ```bash
-# submodule 追加（初回のみ）
-git submodule add https://github.com/queria-io/dataset-shared.git shared
+# dataset-shared を shared/ に置く（初回のみ。shared/ は .gitignore に入れる）
+git clone https://github.com/queria-io/dataset-shared.git shared
 
-# ビルドして Queria に公開する
+# main に合わせてから、ビルドして Queria に公開する
+git -C shared pull
 scripts/build.sh
+```
+
+GitHub Actions では、共通の Apply（`sync.yml`）が自分と同じコミットの dataset-shared を `shared/` に checkout する。PR で回すビルドなど自前のワークフローで `shared/` を使うときは、checkout の後に置く。
+
+```yaml
+      - uses: actions/checkout@v5
+      - run: git clone --depth=1 https://github.com/queria-io/dataset-shared.git shared
 ```
 
 公開先は選ばない。データセットは `tabledoc.yml` の `name`、アカウントはトークンが決める（手元では `FDL_TOKEN` か `queria login`、GitHub Actions では OIDC で取るトークン）。
@@ -55,7 +63,7 @@ sed 's/DATASET_NAME/<name>/g' shared/templates/profiles.yml > profiles.yml
 
 ## 取得の共通部品
 
-`fetch.py` は、データセットの取得処理（`main.py` や `pipelines/*.py`）で使う部品。標準ライブラリだけで書いてある。各データセットリポからは submodule の置き場所経由で読む。
+`fetch.py` は、データセットの取得処理（`main.py` や `pipelines/*.py`）で使う部品。標準ライブラリだけで書いてある。各データセットリポからは `shared/` 経由で読む。
 
 ```python
 from shared.fetch import RangeFile, RangeNotSupported, download, fetch, replacing, write_atomic
@@ -113,15 +121,10 @@ build_plans_parquet(user_agent=USER_AGENT, pdf_dir=Path("data/plans"), parquet_d
 
 各データセットリポは共通のワークフローを `uses: queria-io/dataset-shared/.github/workflows/<name>@main` で呼ぶ。dataset-shared の main にマージした変更は、各データセットの次の Apply から使われる。各リポで固定を上げる作業は無い。
 
-- Apply は、呼んだワークフローと同じコミットの dataset-shared に `shared` を切り替えてからビルドする（ジョブの OIDC トークンの `job_workflow_sha`）。submodule が指すコミットは使わない
+- Apply は、呼んだワークフローと同じコミットの dataset-shared を `shared/` に checkout してからビルドする（ジョブの OIDC トークンの `job_workflow_sha`）
 - main への変更は全データセットのシークレットと書き込み権を持って動くので、PR で出して確認してからマージする
 
-手元でビルドするときは、submodule を main に合わせてから流す。submodule のコミットを上げてコミットする必要はない。
-
-```bash
-git submodule update --init --remote shared
-scripts/build.sh
-```
+手元でビルドするときは、`git -C shared pull` で main に合わせてから流す（上の「使い方」）。
 
 ## Queria のトークン（fdl のデータセット）
 
@@ -353,7 +356,7 @@ Excel・CSV・PDF・ZIP など、配布元がファイルで配るデータは�
 データセットについて分かったことを、カラム・テーブル・データセットのどの階層に
 書くか、`topics` に何を入れるかは
 [docs.queria.io/publish/writing-descriptions](https://docs.queria.io/publish/writing-descriptions)
-にある。ここには置かない。このリポジトリを submodule で参照するのは queria 自身の
+にある。ここには置かない。このリポジトリを使うのは queria 自身の
 データセットだけだが、規約はすべての発行者に等しく効くため。
 
 クックブックの原稿だけは事情が違う。各リポジトリの `docs/*.md` に置いたものが
