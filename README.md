@@ -19,7 +19,7 @@ scripts/build.sh
 
 submodule だったころに clone したリポジトリでは、`shared/` が古いコミットを指したまま（detached HEAD）残り、`git -C shared pull` が "You are not currently on a branch" で止まる。初回だけ `git -C shared checkout main` してから pull する。
 
-GitHub Actions では、共通の Apply（`sync.yml`）が自分と同じコミットの dataset-shared を `shared/` に checkout する。PR で回すビルドなど自前のワークフローで `shared/` を使うときは、checkout の後に置く。
+GitHub Actions では、共通の Apply（`sync.yml`）が dataset-shared の main を `shared/` に checkout する。PR で回すビルドなど自前のワークフローで `shared/` を使うときは、checkout の後に置く。
 
 ```yaml
       - uses: actions/checkout@v5
@@ -123,7 +123,7 @@ build_plans_parquet(user_agent=USER_AGENT, pdf_dir=Path("data/plans"), parquet_d
 
 各データセットリポは共通のワークフローを `uses: queria-io/dataset-shared/.github/workflows/<name>@main` で呼ぶ。dataset-shared の main にマージした変更は、各データセットの次の Apply から使われる。各リポで固定を上げる作業は無い。
 
-- Apply は、呼んだワークフローと同じコミットの dataset-shared を `shared/` に checkout してからビルドする（ジョブの OIDC トークンの `job_workflow_sha`）
+- Apply は、dataset-shared の main を `shared/` に checkout してからビルドする
 - main への変更は全データセットのシークレットと書き込み権を持って動くので、PR で出して確認してからマージする
 
 手元でビルドするときは、`git -C shared pull` で main に合わせてから流す（上の「使い方」）。

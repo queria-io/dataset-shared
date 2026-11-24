@@ -118,30 +118,10 @@ jobs:
           # leave no token in .git/config for them
           persist-credentials: false
 
-      # 各リポは dataset-shared を `@main` で呼ぶ。ビルドが使うスクリプト・Python・dbt のマクロは、
-      # この workflow と同じコミットの dataset-shared を `shared/` に置いて使う。待ち行列に
-      # いるあいだに main が進んでも、workflow とスクリプトのコミットはずれない。
-      # コミットはジョブの OIDC トークンの job_workflow_sha で知る (呼び出し側の id-token: write)
-      - name: Find this workflow's commit
-        id: shared
-        run: |
-          python3 - <<'PY' >>"$GITHUB_OUTPUT"
-          import base64, json, os, sys, urllib.request
-          url = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL")
-          bearer = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
-          if not url or not bearer:
-              sys.exit("no OIDC token: the calling job needs permissions: id-token: write")
-          req = urllib.request.Request(url, headers={"Authorization": f"Bearer {bearer}"})
-          token = json.load(urllib.request.urlopen(req, timeout=30))["value"]
-          payload = token.split(".")[1]
-          claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
-          print(f"sha={claims['job_workflow_sha']}")
-          PY
-
+      # ビルドが使うスクリプト・Python・dbt のマクロ (dataset-shared の main)
       - uses: actions/checkout@v5
         with:
           repository: queria-io/dataset-shared
-          ref: ${{ steps.shared.outputs.sha }}
           path: shared
           persist-credentials: false
 
