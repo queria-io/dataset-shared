@@ -115,7 +115,7 @@ build_plans_parquet(user_agent=USER_AGENT, pdf_dir=Path("data/plans"), parquet_d
 
 - Apply は、呼んだワークフローと同じコミットの dataset-shared に `shared` を切り替えてからビルドする（ジョブの OIDC トークンの `job_workflow_sha`）。submodule が指すコミットは使わない
 - 各バージョンのメッセージに、使った dataset-shared のコミットを `Shared: <SHA>` で記録する（`scripts/built_from.py`）。説明だけの push でも、前回のビルドと dataset-shared のコミットが違えばビルドする
-- main への変更は全データセットのシークレットと書き込み権を持って動くので、main はブランチ保護で PR とコードオーナー（`.github/CODEOWNERS`）のレビューを必須にしている。PR の Test は、そのコミットで dataset-imi と dataset-schemaorg を手元の fdl リポジトリに 2 回ビルドする（Queria には書かない）
+- main への変更は全データセットのシークレットと書き込み権を持って動く。変更は PR で出し、コードオーナー（`.github/CODEOWNERS`）が確認してからマージする。PR の Test は、そのコミットで dataset-imi と dataset-schemaorg を手元の fdl リポジトリに 2 回ビルドする（Queria には書かない）
 
 手元でビルドするときは、submodule を main に合わせてから流す。submodule のコミットを上げてコミットする必要はない。
 
