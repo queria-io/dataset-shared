@@ -47,6 +47,7 @@ jobs:
             '```bash' \
             "git clone $REPO_URL  # 取得済みなら git pull" \
             "cd $DATASET" \
+            "git clone https://github.com/queria-io/dataset-shared.git shared  # 取得済みなら git -C shared pull" \
             "scripts/build.sh" \
             '```' "" \
             "見つけた run: $RUN_URL" "" \

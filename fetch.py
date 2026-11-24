@@ -1,6 +1,6 @@
 """データセットの取得処理で使う共通部品。標準ライブラリだけで書く。
 
-各データセットリポからは submodule の置き場所（shared）経由で読む:
+各データセットリポからは `shared/` に置いた dataset-shared 経由で読む:
 
     from shared.fetch import fetch, replacing
 

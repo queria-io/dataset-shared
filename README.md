@@ -17,6 +17,8 @@ git -C shared pull
 scripts/build.sh
 ```
 
+submodule だったころに clone したリポジトリでは、`shared/` が古いコミットを指したまま（detached HEAD）残り、`git -C shared pull` が "You are not currently on a branch" で止まる。初回だけ `git -C shared checkout main` してから pull する。
+
 GitHub Actions では、共通の Apply（`sync.yml`）が自分と同じコミットの dataset-shared を `shared/` に checkout する。PR で回すビルドなど自前のワークフローで `shared/` を使うときは、checkout の後に置く。
 
 ```yaml

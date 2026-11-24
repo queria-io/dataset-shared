@@ -1,6 +1,6 @@
 """PDF からページごとの本文を取り出す共通部品。PyMuPDF（pymupdf）を使う。
 
-各データセットリポからは submodule の置き場所（shared）経由で読む:
+各データセットリポからは `shared/` に置いた dataset-shared 経由で読む:
 
     from shared.pdf_text import load_cid_map, pdf_pages
 

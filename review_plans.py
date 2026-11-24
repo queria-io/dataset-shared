@@ -1,6 +1,6 @@
 """行政事業レビューのシートが「関係する計画・通知等」に挙げる PDF を、配布元のサイトごとにページの本文にする共通部品。
 
-各データセットリポからは submodule の置き場所（shared）経由で読む:
+各データセットリポからは `shared/` に置いた dataset-shared 経由で読む:
 
     from shared.review_plans import build_plans_parquet, download_plans
 
