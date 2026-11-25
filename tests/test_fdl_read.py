@@ -62,5 +62,28 @@ class CursorTest(unittest.TestCase):
         self.assertIn("'first'", executed[0])
         self.assertIn("'second'", executed[1])
 
+class RefreshTest(unittest.TestCase):
+    def test_replaces_the_secret_only_after_the_interval(self):
+        executed = []
+
+        class Recorder:
+            def execute(self, statement):
+                executed.append(statement)
+
+        conn = Recorder()
+        tokens = iter(["first", "second"])
+        start = 1000.0
+        clock = iter([start, start + fdl_read.REFRESH_SECONDS - 1, start + fdl_read.REFRESH_SECONDS])
+        with unittest.mock.patch.object(fdl_read, "_token", lambda remote: next(tokens)), \
+                unittest.mock.patch.object(fdl_read.time, "monotonic", lambda: next(clock)), \
+                unittest.mock.patch.dict("os.environ", BUILD):
+            fdl_read.refresh(conn)
+            fdl_read.refresh(conn)
+            fdl_read.refresh(conn)
+        self.assertEqual(len(executed), 2)
+        self.assertIn("'first'", executed[0])
+        self.assertIn("'second'", executed[1])
+
+
 if __name__ == "__main__":
     unittest.main()
