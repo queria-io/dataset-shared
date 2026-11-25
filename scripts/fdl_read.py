@@ -16,8 +16,11 @@ profiles.yml (templates/profiles.yml has it):
       - module: fdl_read
 
 A dataset's own Python that reads the published catalog (to skip what is
-published already, say) runs ``fdl_read.statements()`` on its DuckDB connection
-before it attaches the working catalog.
+published already, say) calls ``fdl_read.refresh(conn)`` on its DuckDB connection
+before it attaches the working catalog, and again inside a long loop, outside a
+transaction: it replaces the secret when ``REFRESH_SECONDS`` have passed since the
+last time on that connection. A query or transaction keeps the secret it started
+with, so one that runs longer than the token still fails.
 
 Without FDL_WORKING and FDL_REMOTE (a PR check builds into a local file) or
 without a token, it does nothing.
@@ -26,6 +29,8 @@ without a token, it does nothing.
 from __future__ import annotations
 
 import os
+import time
+import weakref
 from typing import Callable
 
 from dbt.adapters.duckdb.plugins import BasePlugin
@@ -53,9 +58,30 @@ def _token(remote: str) -> str | None:
 
 def statements() -> list[str]:
     """The statements for this build's working catalog (FDL_WORKING), cloned from
-    FDL_REMOTE (build-fdl.sh sets both). A dataset's own Python that reads the
-    published catalog outside dbt runs them on its connection."""
+    FDL_REMOTE (build-fdl.sh sets both)."""
     return setup(os.environ.get("FDL_REMOTE") if os.environ.get("FDL_WORKING") else None, _token)
+
+
+#: How often refresh() replaces the secret. queria_token.py hands out a token with
+#: more than 45 minutes left, so a connection refreshed this often never reads with
+#: an expired one.
+REFRESH_SECONDS = 10 * 60
+#: When refresh() last set the secret, by connection. Weak keys, not id(conn):
+#: CPython gives a new connection the address of one that was closed and freed,
+#: and an id key would then skip the secret on the new connection.
+_set_at: weakref.WeakKeyDictionary[object, float] = weakref.WeakKeyDictionary()
+
+
+def refresh(conn) -> None:
+    """Set the secret on ``conn`` the first time, and again once REFRESH_SECONDS have
+    passed. Call it outside a transaction: one keeps the secret it began with."""
+    now = time.monotonic()
+    last = _set_at.get(conn)
+    if last is not None and now - last < REFRESH_SECONDS:
+        return
+    for statement in statements():
+        conn.execute(statement)
+    _set_at[conn] = now
 
 
 class Plugin(BasePlugin):

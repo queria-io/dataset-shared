@@ -62,5 +62,45 @@ class CursorTest(unittest.TestCase):
         self.assertIn("'first'", executed[0])
         self.assertIn("'second'", executed[1])
 
+
+class RefreshTest(unittest.TestCase):
+    def test_replaces_the_secret_only_after_the_interval(self):
+        executed = []
+
+        class Recorder:
+            def execute(self, statement):
+                executed.append(statement)
+
+        conn = Recorder()
+        tokens = iter(["first", "second"])
+        start = 1000.0
+        clock = iter([start, start + fdl_read.REFRESH_SECONDS - 1, start + fdl_read.REFRESH_SECONDS])
+        with unittest.mock.patch.object(fdl_read, "_token", lambda remote: next(tokens)), \
+                unittest.mock.patch.object(fdl_read.time, "monotonic", lambda: next(clock)), \
+                unittest.mock.patch.dict("os.environ", BUILD):
+            fdl_read.refresh(conn)
+            fdl_read.refresh(conn)
+            fdl_read.refresh(conn)
+        self.assertEqual(len(executed), 2)
+        self.assertIn("'first'", executed[0])
+        self.assertIn("'second'", executed[1])
+
+    def test_a_new_connection_gets_the_secret_at_once(self):
+        # A connection opened right after another one was closed gets the secret,
+        # even when CPython gives it the closed one's address.
+        executed = []
+
+        class Recorder:
+            def execute(self, statement):
+                executed.append(statement)
+
+        with unittest.mock.patch.object(fdl_read, "_token", lambda remote: "token"), \
+                unittest.mock.patch.object(fdl_read.time, "monotonic", lambda: 1000.0), \
+                unittest.mock.patch.dict("os.environ", BUILD):
+            for _ in range(3):
+                fdl_read.refresh(Recorder())
+        self.assertEqual(len(executed), 3)
+
+
 if __name__ == "__main__":
     unittest.main()
