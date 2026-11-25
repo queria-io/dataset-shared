@@ -357,10 +357,8 @@ Excel・CSV・PDF・ZIP など、配布元がファイルで配るデータは�
 
 何を数えたか・どの種類の行かを決まった値で分ける列（指標・品目・業種・年齢階級・性別など）には `dimension: categorical` を書く。
 場所や組織を表す列（メッシュコード・都道府県名・会社名など）と真偽値の列には書かない。年の列は `dimension: time` にする。
-値で検索できるのは `dimension: categorical` の列だけ。
 
-- categorical のコードの列には、同じテーブルにそのコードの名前の列を並べ、名前の列にも `dimension: categorical` を書く。
-  値の検索は名前の列の値で当たる（`cat01` と `item_name` など）
+- categorical のコードの列には、同じテーブルにそのコードの名前の列を並べ、名前の列にも `dimension: categorical` を書く（`cat01` と `item_name` など）
 
 ## 記述の規約
 
