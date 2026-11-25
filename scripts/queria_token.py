@@ -7,7 +7,7 @@ Usage:
 In GitHub Actions, when the job may ask for an OIDC token (`permissions:
 id-token: write`), Queria exchanges that for an API token that lasts an hour
 (POST /api/oidc/github/token). The token is kept in RUNNER_TEMP and used again
-while more than ten minutes of it remain, so a build of any length asks again
+while more than 45 minutes of it remain, so a build of any length asks again
 only when it needs to. Queria gives one only to the repositories, workflows and
 branches registered with it.
 

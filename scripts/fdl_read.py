@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import os
 import time
+import weakref
 from typing import Callable
 
 from dbt.adapters.duckdb.plugins import BasePlugin
@@ -65,19 +66,22 @@ def statements() -> list[str]:
 #: more than 45 minutes left, so a connection refreshed this often never reads with
 #: an expired one.
 REFRESH_SECONDS = 10 * 60
-#: When refresh() last set the secret, by connection.
-_set_at: dict[int, float] = {}
+#: When refresh() last set the secret, by connection. Weak keys, not id(conn):
+#: CPython gives a new connection the address of one that was closed and freed,
+#: and an id key would then skip the secret on the new connection.
+_set_at: weakref.WeakKeyDictionary[object, float] = weakref.WeakKeyDictionary()
 
 
 def refresh(conn) -> None:
     """Set the secret on ``conn`` the first time, and again once REFRESH_SECONDS have
     passed. Call it outside a transaction: one keeps the secret it began with."""
     now = time.monotonic()
-    if now - _set_at.get(id(conn), -REFRESH_SECONDS) < REFRESH_SECONDS:
+    last = _set_at.get(conn)
+    if last is not None and now - last < REFRESH_SECONDS:
         return
     for statement in statements():
         conn.execute(statement)
-    _set_at[id(conn)] = now
+    _set_at[conn] = now
 
 
 class Plugin(BasePlugin):
