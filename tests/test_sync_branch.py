@@ -17,8 +17,9 @@ import sync_branch  # noqa: E402
 def decide(versions: dict, refs: dict, main_id: str | None = None) -> str:
     """refs は ref 名からバージョン ID、versions は ID から parents"""
 
-    def head(_store, name):
-        found = refs.get(name)
+    def head(_store, name="HEAD"):
+        # HEAD は既定のブランチ。ここでは main
+        found = refs.get(MAIN if name == "HEAD" else name)
         return V(id=found, parents=versions[found]) if found else None
 
     def in_history(_store, ancestor, descendant):

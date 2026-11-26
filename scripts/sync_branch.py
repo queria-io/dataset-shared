@@ -7,7 +7,8 @@ Usage:
 The build runs on refs/heads/apply, which only ever holds versions built from
 this repository's code. The code is where the description is changed, so main
 holds nothing apply lacks unless someone pushed to it directly or merged a
-change request of their own. Prints one of:
+change request of their own. "main" here is the dataset's default branch, the
+branch HEAD names (refs/heads/main unless it was changed). Prints one of:
 
   new      main does not exist yet
   start    main exists and the apply branch does not: start it at main
@@ -53,7 +54,7 @@ def decide(store, main_id: str | None = None) -> str:
     the judgment and the clone from being merged unseen.
     """
     apply = repo.head(store, "refs/heads/apply")
-    main = repo.read_version(store, main_id) if main_id else repo.head(store, "refs/heads/main")
+    main = repo.read_version(store, main_id) if main_id else repo.head(store)
     if main is None:
         return "new"
     if apply is None:
