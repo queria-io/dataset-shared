@@ -14,11 +14,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import sync_branch  # noqa: E402
 
 
-def decide(versions: dict, refs: dict, main_id: str | None = None) -> str:
-    """refs は ref 名からバージョン ID、versions は ID から parents"""
+def decide(versions: dict, refs: dict, main_id: str | None = None, default: str | None = None) -> str:
+    """refs は ref 名からバージョン ID、versions は ID から parents、default は HEAD が指すブランチ"""
 
-    def head(_store, name):
-        found = refs.get(name)
+    def head(_store, name="HEAD"):
+        found = refs.get((default or MAIN) if name == "HEAD" else name)
         return V(id=found, parents=versions[found]) if found else None
 
     def in_history(_store, ancestor, descendant):
@@ -39,7 +39,7 @@ def decide(versions: dict, refs: dict, main_id: str | None = None) -> str:
         return sync_branch.decide(None, main_id)
 
 
-MAIN, SYNC = "refs/heads/main", "refs/heads/apply"
+MAIN, SYNC, TRUNK = "refs/heads/main", "refs/heads/apply", "refs/heads/trunk"
 
 
 class DecideTest(unittest.TestCase):
@@ -84,6 +84,26 @@ class JudgedVersionTest(unittest.TestCase):
     def test_the_cloned_version_is_judged_not_main_now(self):
         versions = {"a": (), "b": ("a",), "h": ("a",)}
         self.assertEqual(decide(versions, {MAIN: "h", SYNC: "b"}, main_id="a"), "auto")
+
+
+class DefaultBranchTest(unittest.TestCase):
+    def test_main_is_judged_at_the_branch_head_names(self):
+        versions = {"a": (), "b": ("a",), "h": ("a",)}
+        refs = {MAIN: "h", TRUNK: "a", SYNC: "b"}
+        self.assertEqual(decide(versions, refs, default=TRUNK), "auto")
+        self.assertEqual(decide(versions, refs), "request")
+
+    def test_an_unborn_default_branch_is_new(self):
+        self.assertEqual(decide({"a": ()}, {MAIN: "a"}, default=TRUNK), "new")
+
+    def test_default_branch_is_the_branch_head_names(self):
+        with mock.patch.object(sync_branch.refs, "resolve", return_value=(TRUNK, None)):
+            self.assertEqual(sync_branch.default_branch(None), TRUNK)
+
+    def test_head_naming_a_tag_stops(self):
+        with mock.patch.object(sync_branch.refs, "resolve", return_value=("refs/tags/v1", "a")):
+            with self.assertRaises(SystemExit):
+                sync_branch.default_branch(None)
 
 
 class TargetTest(unittest.TestCase):
