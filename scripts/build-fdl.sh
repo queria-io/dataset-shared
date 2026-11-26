@@ -59,8 +59,8 @@ python3 "$(dirname "$0")/check_models.py" models
 # The fdl-cli and tabledoc every dataset builds with. A new release reaches the
 # datasets only when these are raised here, so a build on this machine and the Sync
 # workflow make and profile a version with the same ones, whatever uv.lock holds.
-FDL_CLI_VERSION=0.41.0
-TABLEDOC_VERSION=0.9.0
+FDL_CLI_VERSION=0.44.0
+TABLEDOC_VERSION=0.10.0
 uv lock --quiet --upgrade-package "fdl-cli==$FDL_CLI_VERSION"
 
 # In a GitHub Actions job that may ask for an OIDC token (`permissions: id-token:
@@ -200,7 +200,7 @@ fi
 
 # tabledoc checks the description and writes it as the _tabledoc tables of the working
 # catalog: the dataset, its tables and columns, and the files (README.md, the
-# tables' guides and the documents). It declares with fdl declare what fdl reads:
+# tables' guides and the documents). It declares with fdl table and fdl dependency what fdl reads:
 # the primary keys, the asset columns, the other datasets the views read
 # (catalogs in profiles.yml), and no profile for its own tables and the tables
 # Queria does not list, so it runs where this project's fdl is on PATH (uv run).
