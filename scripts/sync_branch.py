@@ -3,6 +3,7 @@
 Usage:
   python sync_branch.py <remote> [<main version>]
   python sync_branch.py --target <remote>     print the Queria API and <handle>/<name>
+  python sync_branch.py --default-branch <remote>  print the branch HEAD names (refs/heads/<name>)
 
 The build runs on refs/heads/apply, which only ever holds versions built from
 this repository's code. The code is where the description is changed, so main
@@ -23,7 +24,7 @@ import os
 import re
 import sys
 
-from fdl import repo
+from fdl import refs, repo
 from fdl.stores import open_store
 
 from storage_key import API
@@ -77,6 +78,18 @@ def decide(store, main_id: str | None = None) -> str:
     return "request"
 
 
+def default_branch(store) -> str:
+    """The branch HEAD names (``refs/heads/<name>``), whether or not it holds a version yet.
+
+    In the fdl-cli the build pins, fdl clone without --branch takes refs/heads/main
+    whatever HEAD names, so the build names this branch to it and to fdl branch.
+    """
+    name = refs.resolve(store)[0]
+    if not name.startswith("refs/heads/"):
+        raise SystemExit(f"HEAD names {name}, which is not a branch")
+    return name
+
+
 def target(remote: str) -> tuple[str, str]:
     """The Queria API that holds ``remote``'s change requests, and its <handle>/<name>."""
     match = re.fullmatch(r"https://([^/]+)/datasets/([^/]+)/([^/]+)/?", remote)
@@ -89,5 +102,7 @@ def target(remote: str) -> tuple[str, str]:
 if __name__ == "__main__":
     if sys.argv[1] == "--target":
         print(*target(sys.argv[2]))
+    elif sys.argv[1] == "--default-branch":
+        print(default_branch(open_store(sys.argv[2])))
     else:
         print(decide(open_store(sys.argv[1]), *sys.argv[2:3]))

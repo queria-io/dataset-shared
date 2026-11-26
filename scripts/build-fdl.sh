@@ -273,16 +273,19 @@ uv run fdl push "$work"
 # clone got, so a push to main in between is not merged unseen; a push after the
 # clone makes the push below fail, which opens a change request.
 main=".fdl/main.sqlite"
+# The default branch, named to fdl clone and fdl branch: without it they take
+# refs/heads/main whatever HEAD names.
+default="$(uv run python "$(dirname "$0")/sync_branch.py" --default-branch "$remote")"
 decision="$(uv run python "$(dirname "$0")/sync_branch.py" "$remote")"
 if [ "$decision" != new ]; then
-    uv run fdl clone "$remote" "$main" >/dev/null
+    uv run fdl clone "$remote" "$main" --branch "$default" >/dev/null
     base="$(fdl_status "$main" base)"
     decision="$(uv run python "$(dirname "$0")/sync_branch.py" "$remote" "$base")"
 fi
 request=
 case "$decision" in
 new)
-    uv run fdl branch "$remote" main refs/heads/apply
+    uv run fdl branch "$remote" "${default#refs/heads/}" refs/heads/apply
     ;;
 current)
     echo "main already holds what apply holds"
