@@ -183,6 +183,12 @@ build() {
 if [ -n "$built" ]; then
     echo "only the description or .github/ changed since the build from $built: not running the build"
     rm -f target/manifest.json
+    # tabledoc finds the table of each <model>.tabledoc.yml in dbt's manifest. dbt parse
+    # writes it without running a model (no compiled SQL: that stays as apply's _tabledoc holds it).
+    if [ -f dbt_project.yml ]; then
+        uv run dbt deps --quiet
+        uv run dbt parse --quiet
+    fi
     trailer="Built-From: $built"
 else
     build "$@"
