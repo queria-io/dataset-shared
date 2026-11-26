@@ -184,6 +184,15 @@ build() {
 if [ -n "$built" ]; then
     echo "only the description or .github/ changed since the build from $built: not running the build"
     rm -f target/manifest.json
+    # tabledoc finds the table of each <model>.tabledoc.yml in dbt's manifest. dbt parse
+    # writes it without running a model (no compiled SQL: that stays as apply's _tabledoc holds it).
+    # When dbt cannot parse the project here, the build runs instead.
+    if [ -f dbt_project.yml ] && ! { uv run dbt deps --quiet && uv run dbt parse --quiet; }; then
+        echo "dbt could not parse the project: running the build" >&2
+        built=
+    fi
+fi
+if [ -n "$built" ]; then
     trailer="Built-From: $built"
 else
     build "$@"
@@ -236,11 +245,12 @@ run_load() {
 }
 status=0
 run_load || status=$?
-# 2: the catalog could not be read or written, such as apply's _tabledoc when its files
-# cannot be read here. Without the build there is nothing else to take the SQL
-# from, so build. 1 is the description's own error, which a build does not fix.
-if [ "$status" = 2 ] && [ -n "$built" ]; then
-    echo "could not keep the SQL from apply's _tabledoc: running the build" >&2
+# When the build was skipped, a failed load runs the build and loads again: apply's
+# _tabledoc may be unreadable here (2), or the tables dbt parse names may differ from
+# the ones apply holds (1, such as a schema macro changed in dataset-shared, which
+# built_from.py does not see). An error of the description itself fails again after the build.
+if [ "$status" != 0 ] && [ -n "$built" ]; then
+    echo "tabledoc load failed on the data apply holds: running the build" >&2
     built=
     build "$@"
     status=0
