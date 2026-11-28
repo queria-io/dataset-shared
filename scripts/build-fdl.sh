@@ -30,7 +30,8 @@
 #   FDL_ASSETS   a folder with the files the asset columns point at (linked into the folder fdl commit --assets takes)
 #   FDL_UNDESCRIBED  hidden: tables with no description (no table file) are hidden from lists and search on Queria
 #   FDL_FREE_DISK  1 to remove tools the runner has and the build does not use, before
-#                running the build (the Apply passes it with free_disk). Not done when the build is skipped
+#                running the build (the Apply passes it with free_disk). Only in GitHub Actions;
+#                not done when the build is skipped
 #   FDL_DIRECT   1 to write new data files straight to storage when Queria gives a key
 #                to them, instead of keeping them in a local folder until the commit (default: 0)
 #   QUERIA_USER_AGENT  the name the build reads data.queria.io under (default: queria-build/fdl-<version>)
@@ -172,7 +173,8 @@ if [ "${GITHUB_EVENT_NAME:-}" = push ]; then
 fi
 
 build() {
-    if [ "${FDL_FREE_DISK:-}" = 1 ]; then
+    # Only on a GitHub Actions runner: on any other machine these are someone's tools.
+    if [ "${FDL_FREE_DISK:-}" = 1 ] && [ "${GITHUB_ACTIONS:-}" = true ]; then
         df -h /
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
         df -h /
