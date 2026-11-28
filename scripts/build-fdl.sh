@@ -62,7 +62,7 @@ python3 "$(dirname "$0")/check_models.py" models
 # The fdl-cli and tabledoc every dataset builds with. A new release reaches the
 # datasets only when these are raised here, so a build on this machine and the Sync
 # workflow make and profile a version with the same ones, whatever uv.lock holds.
-FDL_CLI_VERSION=0.44.0
+FDL_CLI_VERSION=0.44.1
 TABLEDOC_VERSION=0.10.0
 uv lock --quiet --upgrade-package "fdl-cli==$FDL_CLI_VERSION"
 
